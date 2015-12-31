@@ -1,0 +1,30 @@
+ROHM rpr0521c ambient light + proximity combo driver
+
+Required properties:
+
+ - compatible					: Should be "rohm,rpr0521c".
+ - reg							: i2c slave address of the device.
+ - interrupt-parent				: Parent of interrupt.
+ - interupts					: L/P sample interrupt to indicate new data ready.
+ - vdd-supply					: Power supply needed to power up the device.
+ - vio-supply					: IO power supply needed for IO and I2C.
+ - rpr0521c,irq-gpio			: The gpio pin for the interrupt.
+ - rpr0521c,prox_th_min			: The threshold adc value for proximity sensor to trigger away interrupt.
+ - rpr0521c,prox_th_max			: The threshold adc value for proximity sensor to trigger  close interrupt.
+
+ Example:
+
+	rohm@38 { /* Ambient light and proximity sensor */
+		compatible = "rohm,rpr0521c";
+		reg = <0x38>;
+		pinctrl-names = "default","sleep";
+		pinctrl-0 = <&rpr0521c_default>;
+		pinctrl-1 = <&rpr0521c_sleep>;
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <113 0x2002>;
+		vdd-supply = <&pm8916_l17>;
+		vio-supply = <&pm8916_l6>;
+		rpr0521c,irq-gpio = <&msm_gpio 113 0x2002>;
+		rpr0521c,prox_th_min = <50>;
+		rpr0521c,prox_th_max = <150>;
+	};

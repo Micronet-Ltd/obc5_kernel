@@ -1,0 +1,20 @@
+#Product config list
+
+config PRODUCT_P1071
+	depends on ARCH_MSM8916
+	bool "PRODUCT_P1071 version"
+	help
+	  Fix version type as PRODUCT_P1071.		
+config PRODUCT_A3002
+	depends on ARCH_MSM8916
+	bool "PRODUCT_A3002 version"
+	help
+	  Fix version type as PRODUCT_A3002.	
+config PRODUCT_A3001
+	depends on ARCH_MSM8916
+	bool "PRODUCT_A3001 version"
+	help
+	  Fix version type as PRODUCT_A3001.	
+
+	  
+
