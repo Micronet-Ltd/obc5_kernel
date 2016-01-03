@@ -631,11 +631,11 @@ source "drivers/cpuidle/Kconfig"
 
 endmenu
 
-config PRODUCT_A2001
+config OIS_HKAPP_NINE_BYTE
 	depends on ARCH_MSM8916
-	bool "PRODUCT_A2001 version"
+	bool "OIS_HKAPP_NINE_BYTE"
 	help
-	  Fix version type as PRODUCT_A2001.	
+	  Fix version type as OIS_HKAPP_NINE_BYTE.
 	  
 source "net/Kconfig"
 
@@ -659,3 +659,5 @@ endif
 source "lib/Kconfig"
 
 source "arch/arm64/mm/Kconfig"
+
+source "arch/arm64/product_list/Kconfig"

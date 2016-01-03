@@ -30,8 +30,8 @@
 		qcom,mdss-dsi-h-back-porch = <28>;//32-->80-->8
 		qcom,mdss-dsi-h-pulse-width = <4>;
 		qcom,mdss-dsi-h-sync-skew = <0>;
-		qcom,mdss-dsi-v-back-porch = <2>;
-		qcom,mdss-dsi-v-front-porch = <3>;
+		qcom,mdss-dsi-v-back-porch = <12>;
+		qcom,mdss-dsi-v-front-porch = <13>;
 		qcom,mdss-dsi-v-pulse-width = <2>;
 		qcom,mdss-dsi-h-left-border = <0>;
 		qcom,mdss-dsi-h-right-border = <0>;
@@ -157,6 +157,10 @@
 39 01 00 00 00 00 10 CD 3F 3F 3F 3F 3F 3F 3F 3F 01 12 11 05 06 3F 17
 39 01 00 00 00 00 02 00 B0
 39 01 00 00 00 00 0C CD 18 3F 3D 25 25 25 1F 20 21 26 26
+39 01 00 00 00 00 02 00 B0
+39 01 00 00 00 00 02 CA 01
+39 01 00 00 00 00 02 00 B3
+39 01 00 00 00 00 02 CA 40 
 //---------------- for Power IC Mode ------------------------//
 39 01 00 00 00 00 02 00 C2
 39 01 00 00 00 00 02 C5 12

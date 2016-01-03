@@ -2202,6 +2202,8 @@ static void msm_hsusb_vbus_power(struct msm_otg *motg, bool on)
 		ret = regulator_enable_smb1358(vbus_otg);
 #else
 		ret = regulator_enable(vbus_otg);
+		// for obc temp
+		regulator_set_voltage(vbus_otg,5000000,5000000);
 #endif
 		if (ret) {
 			pr_err("unable to enable vbus_otg\n");
@@ -2214,6 +2216,8 @@ static void msm_hsusb_vbus_power(struct msm_otg *motg, bool on)
 #ifdef CONFIG_SMB135X_CHARGER
 		ret = regulator_disable_smb1358(vbus_otg);
 #else	
+		// for obc temp
+		regulator_set_voltage(vbus_otg,0,4300000);
 		ret = regulator_disable(vbus_otg);
 #endif
 		if (ret) {

@@ -30,6 +30,12 @@ static struct msm_actuator msm_vcm_actuator_table;
 static struct msm_actuator msm_piezo_actuator_table;
 static struct msm_actuator msm_hvcm_actuator_table;
 
+/* add by shengweiguang begin */
+#ifdef CONFIG_PRODUCT_A2001
+struct msm_camera_i2c_client *ehang_actuator_camera_i2c_client;
+#endif 
+/* add by shengweiguang end */
+
 static struct i2c_driver msm_actuator_i2c_driver;
 static struct msm_actuator *actuators[] = {
 	&msm_vcm_actuator_table,
@@ -606,6 +612,9 @@ static int32_t msm_actuator_set_param(struct msm_actuator_ctrl_t *a_ctrl,
 	int32_t rc = -EFAULT;
 	uint16_t i = 0;
 	struct msm_camera_cci_client *cci_client = NULL;
+#ifdef CONFIG_PRODUCT_A2001
+	uint8_t data_ois[8]={0x3,0,0,0,0,0,0,0}; // add by shengweiguang for ois mode set
+#endif
 	CDBG("Enter\n");
 
 	for (i = 0; i < ARRAY_SIZE(actuators); i++) {
@@ -722,7 +731,37 @@ static int32_t msm_actuator_set_param(struct msm_actuator_ctrl_t *a_ctrl,
 			}
 		}
 	}
-
+#ifdef CONFIG_PRODUCT_A2001
+	if (set_info->actuator_params.i2c_addr == 0x32)
+	{
+		rc = msm_camera_cci_i2c_write_seq(&a_ctrl->i2c_client,0x01, &data_ois[0], 8);
+		if (rc < 0)
+		{
+			pr_info("OIS : set OIS mode failed !!!!!!!!!!!!\n");
+		}
+		else
+		{
+			uint8_t data_ois_check[9]={0x0,0,0,0,0,0,0,0,0};
+			pr_info("OIS : set OIS mode success !!!!!!!!!!!!\n");
+			
+			rc = msm_camera_cci_i2c_write_seq(&a_ctrl->i2c_client,0x81, &data_ois_check[0], 8);
+			if (rc<0)
+				pr_info("OIS : send read ois mode command failed !!!!\n");
+			
+			rc = msm_camera_cci_i2c_read_seq(&a_ctrl->i2c_client,0x81, &data_ois_check[0], 9);
+			if (rc < 0)
+				pr_info("OIS : read ois data failed !!!!\n");
+			
+			pr_info(" OIS : ois read data : %x, %x, %x, %x, %x, %x, %x, %x,%x\n", 
+			data_ois_check[0], data_ois_check[1], data_ois_check[2], data_ois_check[3], 
+			data_ois_check[4], data_ois_check[5], data_ois_check[6], data_ois_check[7], data_ois_check[8]);
+		}
+	}
+	else
+	{
+		pr_info("SWG4 : Do not set OIS mode for this ACTUATOR i2c address!!!!!!!!!!!!\n");
+	}
+#endif
 	/* Park lens data */
 	a_ctrl->park_lens = set_info->actuator_params.park_lens;
 	a_ctrl->initial_code = set_info->af_tuning_params.initial_code;
@@ -846,8 +885,13 @@ static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl = {
 	.i2c_write = msm_camera_cci_i2c_write,
 	.i2c_write_table = msm_camera_cci_i2c_write_table,
 	.i2c_write_seq_table = msm_camera_cci_i2c_write_seq_table,
+	#ifdef CONFIG_PRODUCT_A2001
+	.i2c_write_table_w_microdelay =
+		msm_camera_cci_i2c_write_ois_actuator_w_microdelay,
+	#else
 	.i2c_write_table_w_microdelay =
 		msm_camera_cci_i2c_write_table_w_microdelay,
+	#endif
 	.i2c_util = msm_sensor_cci_i2c_util,
 	.i2c_poll =  msm_camera_cci_i2c_poll,
 };
@@ -873,7 +917,7 @@ static int msm_actuator_close(struct v4l2_subdev *sd,
 		return -EINVAL;
 	}
 	// deled by yangze for msm_actuator close error log (ql1700) 2014-08-12 begin
-	#if 0
+	#if 1  // open by shengweiguang for daiji dianliu
 	if (a_ctrl->act_device_type == MSM_CAMERA_PLATFORM_DEVICE) {
 		rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_util(
 			&a_ctrl->i2c_client, MSM_CCI_RELEASE);
@@ -1270,6 +1314,13 @@ static int32_t msm_actuator_platform_probe(struct platform_device *pdev)
 	cci_client = msm_actuator_t->i2c_client.cci_client;
 	cci_client->cci_subdev = msm_cci_get_subdev();
 	cci_client->cci_i2c_master = MASTER_MAX;
+	
+/* add by shengweiguang begin */
+#ifdef CONFIG_PRODUCT_A2001
+	ehang_actuator_camera_i2c_client = &msm_actuator_t->i2c_client;
+#endif
+/* add by shengweiguang end */
+
 	v4l2_subdev_init(&msm_actuator_t->msm_sd.sd,
 		msm_actuator_t->act_v4l2_subdev_ops);
 	v4l2_set_subdevdata(&msm_actuator_t->msm_sd.sd, msm_actuator_t);

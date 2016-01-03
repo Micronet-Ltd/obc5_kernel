@@ -170,6 +170,51 @@
 		};
 	};
 
+	// by skj
+	i2c@78ba000 { /* BLSP1 QUP6 */
+		nfc@2b {
+			compatible = "nfc,pn544";
+			reg = <0x2b>;
+			qcom,irq-gpio = <&msm_gpio 11 0x00>;
+			qcom,dis-gpio = <&msm_gpio 20 0x00>;
+			qcom,firm_gpio = <&msm_gpio 17 0x0>;
+			qcom,clk-src = "BBCLK2";
+			qcom,clk-en-gpio = <&msm_gpio 21 0x00>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <11 0>;
+			interrupt-names = "nfc_irq";
+			pinctrl-names = "nfc_active","nfc_suspend";
+			pinctrl-0 = <&nfc_int_active &nfc_disable_active>;
+			pinctrl-1 = <&nfc_int_suspend &nfc_disable_suspend>;
+			qcom,clk-gpio = <&pm8916_gpios 2 0>;
+			clocks = <&clock_rpm clk_bb_clk2_pin>;
+			clock-names = "ref_clk";
+			};
+	};
+
+	// by skj
+	obc_otg_vreg:usbotgobc { 
+		compatible = "regulator-gpio";
+		regulator-name = "obc_otg_vreg";
+		regulator-min-microvolt = <4300000>;
+		regulator-max-microvolt = <5000000>;
+		
+		enable-gpio = <&msm_gpio 51 0x00>;
+		gpios = <&msm_gpio 111 0x00>;
+		states = <4300000 0x0
+				5000000 0x1>;
+		enable-active-high;
+		regulator-type = "voltage";
+	};
+	
+	usb_otg: usb@78d9000 {
+		vbus_otg-supply = <&obc_otg_vreg>;
+		qcom,usbid-gpio = <&msm_gpio 110 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&usbid_default>;
+		qcom,hsusb-otg-mode = <3>;
+	};		
+	
 	i2c@78b6000 { /* BLSP1 QUP2 */
 /*
 		mpu6050@68 { 
@@ -373,7 +418,7 @@
 		compatible = "gpio-leds";
 		pinctrl-names = "default";
 		// by skj
-		pinctrl-0 = <&button_backlight_off &gpio_led_off &gpio_gps>;
+		pinctrl-0 = <&button_backlight_off &gpio_led_off>;
 	
 		keypad-backlight {
 			gpios = <&msm_gpio 108 0>;
@@ -393,26 +438,16 @@
 			label = "green";
 			default-state = "off";
 			retain-state-suspended;
-		};
-		// by skj
-		gps_rst {
-			gpios = <&msm_gpio 3 1>;
-			label = "gps_rst";
-			default-state = "off";
-			retain-state-suspended;
-		};		
-		gps_pwr {
-			gpios = <&msm_gpio 54 0>;
-			label = "gps_pwr";
-			default-state = "off";
-			retain-state-suspended;
-		};
-		gps_lna {
-			gpios = <&msm_gpio 96 0>;
-			label = "gps_lna";
-			default-state = "off";
-			retain-state-suspended;
-		};		
+		};	
+	};
+	watchdogpin {
+		compatible = "ehang,watchdog-pin";
+		pinctrl-names = "default";
+		pinctrl-0 = <&obc_watchdog_pin>;		
+		ehang,toggle-pin = <&msm_gpio 91 0>;
+		//ehang,suspend-state-pin = <&msm_gpio 91 0>;
+		ehang,high-delay=<1000>;
+		ehang,low-delay=<5000>;
 	};
 	sound {
 		compatible = "qcom,msm8x16-audio-codec";
@@ -589,7 +624,7 @@
 			1 &intc 0 221 0
 			2 &msm_gpio 38 0>;
 	interrupt-names = "hc_irq", "pwr_irq", "status_irq";
-	cd-gpios = <&msm_gpio 38 0x1>;
+	cd-gpios = <&msm_gpio 38 0x0>;
 
 	status = "ok";
 };
@@ -689,6 +724,7 @@
 	status = "ok";
 	// by skj
 	// qcom,use-external-charger;
+	qcom,charging-disabled;
 };
 
 / {

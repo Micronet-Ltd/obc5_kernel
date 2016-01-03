@@ -251,6 +251,34 @@ int32_t msm_camera_cci_i2c_write_seq_table(
 	return rc;
 }
 
+int32_t msm_camera_cci_i2c_write_ois_actuator_w_microdelay(
+	struct msm_camera_i2c_client *client,
+	struct msm_camera_i2c_reg_setting *write_setting)
+{
+	int32_t rc = -EFAULT;
+	int32_t i=0;
+	
+	uint8_t data_af[8]={0x00,0x00,0,0,0,0,0,0};
+	
+	if (!client || !write_setting)
+		return rc;
+
+	CDBG("####focus size=%d",write_setting->size);
+	CDBG("#####focus reg=%x",write_setting->reg_setting[0].reg_addr);
+	CDBG("#####focus value=%x",write_setting->reg_setting[0].reg_data);
+  	data_af[0]=(write_setting->reg_setting[0].reg_data)>>8;
+ 	data_af[1]=(write_setting->reg_setting[0].reg_data)&0x00FF;
+  	for(i=0;i<8;i++)
+    	CDBG("ois value data_af[%d]=%x",i,data_af[i]);
+	rc=msm_camera_cci_i2c_write_seq(client,write_setting->reg_setting[0].reg_addr,&data_af[0], 8);
+	if (rc < 0) {
+		pr_err("%s: line %d rc = %d\n", __func__, __LINE__, rc);
+		return rc;
+	}
+
+	return rc;
+}
+
 int32_t msm_camera_cci_i2c_write_table_w_microdelay(
 	struct msm_camera_i2c_client *client,
 	struct msm_camera_i2c_reg_setting *write_setting)

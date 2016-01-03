@@ -290,7 +290,6 @@ int fts_ctpm_fw_upgrade_with_i_file(struct i2c_client *client)
 	/*add for hualu rongna ctp  vendor id is 0x11 and 0xd1 end by zengguang 2014.07.30*/
     /*added by jiao.shp for p2170 5526 tp fw 20141023 begin*/
     case FT6X06_VENDOR0x86_EKEY:
-	case FT5X46_VENDOR0x79_EKEY:
         #if defined(CONFIG_PRODUCT_A2001)|| defined(CONFIG_PRODUCT_A3001)
     	fw_len = sizeof(FT5526_FIRMWARE_EKEY);
     	pr_info("FT5X26:upgrade with ekey 5526 firmware,firmware size is %d.\n",fw_len);	
@@ -316,9 +315,38 @@ int fts_ctpm_fw_upgrade_with_i_file(struct i2c_client *client)
                             if(ft5x36_ts->pdata->auto_clb)
     			       fts_ctpm_auto_clb(client);	/*start auto CLB */
     		}
-    	} 	
-        break;
-    	#endif
+    	}
+    	#endif 	
+      break;
+	case FT5X46_VENDOR0x79_JUNDA:
+        #if defined(CONFIG_PRODUCT_A2001)
+    	fw_len = sizeof(FT5526_FIRMWARE_JUNDA);
+    	pr_info("FT5X26:upgrade with ekey 5526 firmware,firmware size is %d.\n",fw_len);	
+    	/*judge the fw that will be upgraded
+    	         * if illegal, then stop upgrade and return.
+    	        */
+    	if (fw_len < 8 || fw_len > 54 * 1024) {
+    		dev_err(&client->dev, "%s:FW length error\n", __func__);
+    		return -EIO;
+    	}
+        
+    	if ((FT5526_FIRMWARE_JUNDA[fw_len - 8] ^ FT5526_FIRMWARE_JUNDA[fw_len - 6]) == 0xFF
+    		&& (FT5526_FIRMWARE_JUNDA[fw_len - 7] ^ FT5526_FIRMWARE_JUNDA[fw_len - 5]) == 0xFF
+    		&& (FT5526_FIRMWARE_JUNDA[fw_len - 3] ^ FT5526_FIRMWARE_JUNDA[fw_len - 4]) == 0xFF) {
+    		/*FW upgrade */
+    		pbt_buf = FT5526_FIRMWARE_JUNDA;
+    		/*call the upgrade function */
+    		i_ret = fts5x46_ctpm_fw_upgrade(client, pbt_buf, sizeof(FT5526_FIRMWARE_JUNDA));
+    		if (i_ret != 0)
+    			dev_err(&client->dev, "%s:upgrade failed. err. i_ret is %d\n",
+    					__func__,i_ret);
+    		else{
+                            if(ft5x36_ts->pdata->auto_clb)
+    			       fts_ctpm_auto_clb(client);	/*start auto CLB */
+    		}
+    	}
+    	#endif 
+      break;
         case FT5X46_VENDOR0xD8_LEAD:
         #if defined(CONFIG_QL1001_J20) || defined(CONFIG_QL1001_J20TMP)
     	fw_len = sizeof(FT5526_FIRMWARE_LEAD);
@@ -452,14 +480,20 @@ u8 fts_ctpm_get_i_file_ver(struct i2c_client *client)
 	break;
 	/*add for hualu rongna ctp  vendor id is 0x11 and 0xd1 end by zengguang 2014.07.30*/
     /*added by jiao.shp for p2170 5526 tp fw 20141023 begin*/
-    case FT6X06_VENDOR0x86_EKEY:
-	case FT5X46_VENDOR0x79_EKEY:        
+  case FT6X06_VENDOR0x86_EKEY:       
         #if defined(CONFIG_PRODUCT_A2001)|| defined(CONFIG_PRODUCT_A3001)
     	ui_sz = sizeof(FT5526_FIRMWARE_EKEY);
     	if (ui_sz > 2)
-            return FT5526_FIRMWARE_EKEY[ui_sz - 2];	
+            return FT5526_FIRMWARE_EKEY[ui_sz - 2];
+		#endif 	
         break;
-    	#endif     
+	case FT5X46_VENDOR0x79_JUNDA:        
+        #if defined(CONFIG_PRODUCT_A2001)
+    	ui_sz = sizeof(FT5526_FIRMWARE_JUNDA);
+    	if (ui_sz > 2)
+            return FT5526_FIRMWARE_JUNDA[ui_sz - 2];
+		#endif	
+        break;     
     case FT5X46_VENDOR0xD8_LEAD:
         #if defined(CONFIG_QL1001_J20) || defined(CONFIG_QL1001_J20TMP) 
     	ui_sz = sizeof(FT5526_FIRMWARE_LEAD);

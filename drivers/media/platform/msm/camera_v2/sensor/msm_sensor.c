@@ -31,6 +31,13 @@ static struct v4l2_file_operations msm_sensor_v4l2_subdev_fops;
 #define CDBG(fmt, args...) do { } while (0)
 #endif
 
+/* add by shengweiguang begin */
+#ifdef CONFIG_PRODUCT_A2001
+extern struct msm_camera_i2c_client *ehang_actuator_camera_i2c_client;
+#endif
+/* add by shengweiguang end */
+
+
 //added by yangze for SW00028457 (qc805) 2014-1-12 begin
 static int8_t front_power_state =0;
 static int8_t back_power_state =0;
@@ -609,10 +616,17 @@ int msm_camera_power_down_control(struct msm_camera_power_ctrl_t *ctrl,
 			{					
 				if(ps->config_val != POWERDOWN_DEFAULT)
 					break;
-				msm_camera_config_single_vreg(ctrl->dev,
+				if (pd->seq_val < ctrl->num_vreg) // add by shengweiguang for fix boot crash
+				{
+				   msm_camera_config_single_vreg(ctrl->dev,
 					&ctrl->cam_vreg[pd->seq_val],
 					(struct regulator **)&ps->data[0],
 					0);
+				}
+				else
+					pr_err("%s:%d:seq_val:%d > num_vreg: %d\n"
+						, __func__, __LINE__,
+						pd->seq_val, ctrl->num_vreg);
 			}
 			else
 				pr_err("%s error in power up/down seq data\n",
@@ -796,10 +810,14 @@ int msm_camera_power_up_control(struct msm_camera_power_ctrl_t *ctrl,
 					SENSOR_GPIO_MAX);
 				goto power_up_failed;
 			}
-			msm_camera_config_single_vreg(ctrl->dev,
+			
+			if (power_setting->seq_val < ctrl->num_vreg) // add by shengweiguang for fix boot crash
+			{	
+				msm_camera_config_single_vreg(ctrl->dev,
 				&ctrl->cam_vreg[power_setting->seq_val],
 				(struct regulator **)&power_setting->data[0],
 				1);
+			}
 			break;
 		case SENSOR_I2C_MUX:
 			//modified by yangze for camera cts test (qc805) 2014-01-18 begin			
@@ -850,6 +868,10 @@ power_up_failed:
 				0);
 			break;
 		case SENSOR_GPIO:
+		
+			if (!ctrl->gpio_conf->gpio_num_info) // add by shengweiguang 
+				continue;
+			
 			//modified by yangze for camera cts test (qc805) 2014-01-18 begin
 			if((front_power_state == 1)&&(back_power_state == 1)){
 				if((power_setting->seq_val == SENSOR_GPIO_VANA)||(power_setting->seq_val == SENSOR_GPIO_VDIG)){					
@@ -866,10 +888,13 @@ power_up_failed:
 				[power_setting->seq_val], GPIOF_OUT_INIT_LOW);
 			break;
 		case SENSOR_VREG:
-			msm_camera_config_single_vreg(ctrl->dev,
+			if (power_setting->seq_val < ctrl->num_vreg) // add by shengweiguang for fix boot crash
+			{
+				msm_camera_config_single_vreg(ctrl->dev,
 				&ctrl->cam_vreg[power_setting->seq_val],
 				(struct regulator **)&power_setting->data[0],
 				0);
+			}
 			break;
 		case SENSOR_I2C_MUX:
 			//modified by yangze for camera cts test (qc805) 2014-01-18 begin			
@@ -933,12 +958,30 @@ int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 	enum msm_camera_device_type_t sensor_device_type;
 	struct msm_camera_i2c_client *sensor_i2c_client;
 	struct msm_camera_sensor_board_info *sd; //Added by hanjianfeng for camera power control 20140809
-
+#ifdef CONFIG_PRODUCT_A2001
+	int rc;
+	uint8_t data_af[8]={0xff,0,0,0,0,0,0,0}; // add by shengweiguang for ois actuator power down "ka"
+#endif
 	if (!s_ctrl) {
 		pr_err("%s:%d failed: s_ctrl %p\n",
 			__func__, __LINE__, s_ctrl);
 		return -EINVAL;
 	}
+
+/* add by shengweiguang begin */	
+#ifdef CONFIG_PRODUCT_A2001
+	rc = msm_camera_cci_i2c_write_seq(ehang_actuator_camera_i2c_client,0x01, &data_af[0], 8);
+	if (rc < 0)
+	{
+		pr_err("SWGX : power down set af  failed !!!!!!!!!!!!\n");
+	}
+	else
+	{
+		pr_err("SWGX : power down set af  success !!!!!!!!!!!!\n");
+		msleep(200);
+	}
+#endif
+/* add by shengweiguang end */
 
 	power_info = &s_ctrl->sensordata->power_info;
 	sensor_device_type = s_ctrl->sensor_device_type;

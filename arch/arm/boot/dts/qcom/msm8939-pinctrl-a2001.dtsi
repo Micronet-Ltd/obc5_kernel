@@ -511,9 +511,9 @@
 		};
 
 		tlmm_gpio_key {
-			qcom,pins = <&gp 107>, <&gp 108>, <&gp 109>;
+			qcom,pins = <&gp 49>, <&gp 107>, <&gp 108>, <&gp 109>;
 			qcom,pin-func = <0>;
-			qcom,num-grp-pins = <3>;
+			qcom,num-grp-pins = <4>;
 			label = "tlmm_gpio_key";
 			gpio_key_active: gpio_key_active {
 				drive-strength = <2>;
@@ -1090,8 +1090,8 @@
 
 		cam_sensor_rear {
 			/* RESET, STANDBY */
-			qcom,pins =  <&gp 35>, <&gp 34>;
-			qcom,num-grp-pins = <2>;
+			qcom,pins =  <&gp 35>, <&gp 34>,<&gp 121>,<&gp 78>,<&gp 91>;
+			qcom,num-grp-pins = <5>;
 			qcom,pin-func = <0>;
 			label = "cam-sensor-rear";
 			/* active state */
@@ -1103,8 +1103,8 @@
 
 		cam_sensor_rear_sleep {
 			/* RESET, STANDBY */
-			qcom,pins =  <&gp 35>, <&gp 34>;
-			qcom,num-grp-pins = <2>;
+			qcom,pins =  <&gp 35>, <&gp 34>,<&gp 121>,<&gp 78>,<&gp 91>;
+			qcom,num-grp-pins = <5>;
 			qcom,pin-func = <0>;
 			label = "cam-sensor-rear-sleep";
 			/*suspend state */
@@ -1543,7 +1543,7 @@
 				bias-disable;
 			};
 		};
-
+/*
 		tpiu_setb_18 {
 			qcom,pins = <&gp 121>;
 			qcom,num-grp-pins = <1>;
@@ -1554,7 +1554,7 @@
 				bias-disable;
 			};
 		};
-
+*/
 		uicc-active {
 			qcom,pins = <&gp 53>, <&gp 54>;
 			qcom,num-grp-pins = <2>;

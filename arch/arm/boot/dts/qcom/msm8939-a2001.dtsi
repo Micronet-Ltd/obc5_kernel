@@ -73,11 +73,11 @@
 		compatible = "qcom,gen-vkeys";
 		label = "FT5x36";
 		qcom,disp-maxx = <720>;
-		qcom,disp-maxy = <1920>;
+		qcom,disp-maxy = <1280>;
 		qcom,panel-maxx = <720>;
-		qcom,panel-maxy = <2080>;
+		qcom,panel-maxy = <1440>;
 		qcom,key-codes = <139 172 158>;
-		qcom,y-offset = <0>;
+		qcom,y-offset = <640>;
 	};
 
 	// by skj
@@ -91,8 +91,7 @@
 			pinctrl-0 = <&smb_int_default>;
 
 			qcom,bmd-algo-disabled;
-			// skj 2005
-			qcom,float-voltage-mv = <4200>;
+			qcom,float-voltage-mv = <4350>;
 			qcom,charging-timeout = <1536>;
 			qcom,recharge-thresh-mv = <100>;
 			regulator-name = "smb1357_otg_vreg";
@@ -106,7 +105,7 @@
 			qcom,bms-controlled-charging;
 			qcom,chg-vadc = <&pm8916_vadc>;
 			qcom,pa-ctrl-pin = <&msm_gpio 93 0>;
-			qcom,fastchg-ma= <1500>; 
+			qcom,fastchg-ma= <3000>; 
 			
 			qcom,dc-psy-type = "Mains";
 			qcom,dc-psy-ma = <800>;
@@ -176,21 +175,20 @@
 		pinctrl-0 = <&gpio_key_active>;
 		pinctrl-1 = <&gpio_key_suspend>;
 
-		camera_focus {
-			label = "camera_focus";
+		sos {
+			label = "sos";
 			gpios = <&msm_gpio 108 0x1>;
 			linux,input-type = <1>;
-			linux,code = <0x210>;
+			linux,code = <249>;
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
 
-		camera_snapshot {
-			label = "camera_snapshot";
-			gpios = <&msm_gpio 109 0x1>;
+		camera {
+			label = "camera";
+			gpios = <&msm_gpio 49 0x1>;
 			linux,input-type = <1>;
-			linux,code = <0x2fe>;
-			gpio-key,wakeup;
+			linux,code = <212>;
 			debounce-interval = <15>;
 		};
 
@@ -200,6 +198,14 @@
 			linux,input-type = <1>;
 			linux,code = <115>;
 			gpio-key,wakeup;
+			debounce-interval = <15>;
+		};
+		
+		ptt {
+			label = "ptt";
+			gpios = <&msm_gpio 109 0x1>;
+			linux,input-type = <1>;
+			linux,code = <250>;
 			debounce-interval = <15>;
 		};
 	};
@@ -218,7 +224,7 @@
 			vi2c-supply = <&pm8916_l6>;
 			invn,use-interrupt;
 			invn,gpio-int = <&msm_gpio 114 0x2>;
-			invn,place = "Portrait Down Back Side";
+			invn,place = "Landscape Left";
 			invn,gpio-en = <&msm_gpio 75 0x2>;
 		};
 		
@@ -328,6 +334,12 @@
 	pinctrl-0 = <&uart_console_sleep1>;
 };
 
+&blsp1_uart2 {
+	status = "ok";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart_console_sleep>;
+};
+
 &pm8916_gpios {
 	gpio@c100 { /* GPIO 2 */
 		/* NFC_CLK_REQ */
@@ -423,7 +435,7 @@
 		qcom,rpull-up-kohm = <100>;
 		qcom,vref-batt-therm = <1800000>;
 
-		#include "batterydata-palladium.dtsi"
+		#include "batterydata-palladium-3500.dtsi"
 	};
 };
 

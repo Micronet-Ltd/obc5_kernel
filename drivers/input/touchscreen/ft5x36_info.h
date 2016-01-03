@@ -28,7 +28,7 @@ static ft5x36_ven_info ft5x36_name[]=
 {FT5X36_VENDOR_DAWOSI,"Dawos0x8A_"},
 {FT5X36_VENDOR_TRULY,"Truly0x5A_"},
 {FT6X06_VENDOR0x86_EKEY,"Ekey0x86_"},
-{FT5X46_VENDOR0x79_EKEY,"Ekey0x79_"},
+{FT5X46_VENDOR0x79_JUNDA,"JUNDA0x79_"},
 {FT5X46_VENDOR0xD8_LEAD,"Lead0xD8"},
 //modify by chenchen for benwee rongna 20140818 begin
 {FT6X06_VENDOR0x11_RONGNA,"RongNa0x11_"},

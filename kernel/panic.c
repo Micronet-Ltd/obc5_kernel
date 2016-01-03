@@ -140,7 +140,7 @@ void panic(const char *fmt, ...)
 
 	if (!panic_blink)
 		panic_blink = no_blink;
-
+#if 0 // temp debug
 	if (panic_timeout > 0) {
 		/*
 		 * Delay timeout seconds before rebooting the machine.
@@ -157,7 +157,7 @@ void panic(const char *fmt, ...)
 			mdelay(PANIC_TIMER_STEP);
 		}
 	}
-
+#endif
 	trace_kernel_panic_late(0);
 
 	if (panic_timeout != 0) {

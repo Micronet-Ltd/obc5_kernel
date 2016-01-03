@@ -173,6 +173,7 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
 	POWER_SUPPLY_PROP_BATTERY_TYPE,
+	POWER_SUPPLY_PROP_ALLOW_DETECTION,
 };
 
 enum power_supply_type {
@@ -290,6 +291,8 @@ extern int power_supply_register(struct device *parent,
 				 struct power_supply *psy);
 extern void power_supply_unregister(struct power_supply *psy);
 extern int power_supply_powers(struct power_supply *psy, struct device *dev);
+extern int power_supply_set_allow_detection(struct power_supply *psy,
+							int value);
 #else
 static inline struct power_supply *power_supply_get_by_name(char *name)
 							{ return NULL; }
@@ -338,6 +341,9 @@ static inline void power_supply_unregister(struct power_supply *psy) { }
 static inline int power_supply_powers(struct power_supply *psy,
 				      struct device *dev)
 							{ return -ENOSYS; }
+static inline int power_supply_set_allow_detection(struct power_supply *psy,
+							int value)
+							{ return -ENOSYS; }							
 #endif
 
 /* For APM emulation, think legacy userspace. */

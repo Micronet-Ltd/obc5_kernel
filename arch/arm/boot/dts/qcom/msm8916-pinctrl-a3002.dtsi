@@ -184,7 +184,18 @@
 				bias-disable;
 			};
 		};
-
+		
+		watchdog_pin_active {
+			qcom,pins = <&gp 91>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <0>;
+		        label = "watchdog_pin_active";
+			obc_watchdog_pin: default {
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+		
 		sdhc2_cd_pin {
 			qcom,pins = <&gp 38>;
 			qcom,num-grp-pins = <1>;
@@ -723,7 +734,7 @@
 		};
 
 		pmx_rd_nfc_int{
-			qcom,pins = <&gp 21>;
+			qcom,pins = <&gp 11>; // by skj
 			qcom,pin-func = <0>;
 			qcom,num-grp-pins = <1>;
 			label = "pmx_nfc_int";
@@ -1184,7 +1195,7 @@
 		};
 
 		gpio_led_pins {
-			qcom,pins = <&gp 116>, <&gp 117>, <&gp 10>; // by skj p2170
+			qcom,pins = <&gp 116>, <&gp 117>, <&gp 108>; // by skj a3001
 			qcom,num-grp-pins = <3>;
 			label = "gpio-led-pins";
 			gpio_led_off: led_off {
@@ -1522,7 +1533,7 @@
 		/* add by shengweiguang end */
 		
 		rpr0521c_int_pin {
-			qcom,pins = <&gp 113>;
+			qcom,pins = <&gp 120>;
 			qcom,pin-func = <0>;
 			qcom,num-grp-pins = <1>;
 			label = "rpr0521c-irq";

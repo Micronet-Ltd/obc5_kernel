@@ -76,6 +76,11 @@
 
 #define CFG_C_REG			0x0C
 #define USBIN_INPUT_MASK		SMB135X_MASK(4, 0)
+#define USBIN_ADAPTER_ALLOWANCE_MASK	SMB135X_MASK(7, 5)
+#define ALLOW_5V_ONLY			0x00
+#define ALLOW_5V_OR_9V			0x20
+#define ALLOW_5V_TO_9V			0x40
+#define ALLOW_9V_ONLY			0x60
 
 #define CFG_D_REG			0x0D
 
@@ -86,6 +91,7 @@
 
 #define CFG_11_REG			0x11
 #define PRIORITY_BIT			BIT(7)
+#define AUTO_SRC_DET_EN_BIT			BIT(0)
 
 #define USBIN_DCIN_CFG_REG		0x12
 #define USBIN_SUSPEND_VIA_COMMAND_BIT	BIT(6)
@@ -420,6 +426,8 @@ struct smb135x_chg {
 
 	const char			*pinctrl_state_name;
 	struct pinctrl			*smb_pinctrl;
+	bool				apsd_rerun;
+	
 	// by skj
 	struct qpnp_vadc_chip		*vadc_dev;
 	struct delayed_work		temp_monitor_work;
@@ -1199,6 +1207,12 @@ static int smb135x_set_usb_chg_current(struct smb135x_chg *chip,
 	int rc;
 
 	pr_debug("USB current_ma = %d\n", current_ma);
+	
+	if(current_ma>AC_MAX_CURRENT){
+		WARN_ON(1);
+		printk("who set the current value %d\n",current_ma);		
+		current_ma=AC_MAX_CURRENT;
+	}
 
 	if (chip->workaround_flags & WRKARND_USB100_BIT) {
 		pr_info("USB requested = %dmA using %dmA\n", current_ma,
@@ -2728,10 +2742,40 @@ static int handle_usb_removal(struct smb135x_chg *chip)
 				POWER_SUPPLY_TYPE_UNKNOWN);
 		pr_debug("setting usb psy present = %d\n", chip->usb_present);
 		power_supply_set_present(chip->usb_psy, chip->usb_present);
-		// by skj debug
+		pr_debug("setting usb psy allow detection 0\n");
+		power_supply_set_allow_detection(chip->usb_psy, 0);
+	
+
 		smb135x_set_usb_chg_current(chip,USB_MAX_CURRENT);		
 	}
 	return 0;
+}
+
+static int rerun_apsd(struct smb135x_chg *chip)
+{
+	int rc;
+
+	pr_debug("Reruning APSD\nDisabling APSD\n");
+	rc = smb135x_masked_write(chip, CFG_11_REG, AUTO_SRC_DET_EN_BIT, 0);
+	if (rc) {
+		dev_err(chip->dev, "Couldn't Disable APSD rc=%d\n", rc);
+		return rc;
+	}
+	pr_debug("Allow only 9V chargers\n");
+	rc = smb135x_masked_write(chip, CFG_C_REG,
+			USBIN_ADAPTER_ALLOWANCE_MASK, ALLOW_9V_ONLY);
+	if (rc)
+		dev_err(chip->dev, "Couldn't Allow 9V rc=%d\n", rc);
+	pr_debug("Enabling APSD\n");
+	rc = smb135x_masked_write(chip, CFG_11_REG, AUTO_SRC_DET_EN_BIT, 1);
+	if (rc)
+		dev_err(chip->dev, "Couldn't Enable APSD rc=%d\n", rc);
+	pr_debug("Allow 5V-9V\n");
+	rc = smb135x_masked_write(chip, CFG_C_REG,
+			USBIN_ADAPTER_ALLOWANCE_MASK, ALLOW_5V_TO_9V);
+	if (rc)
+		dev_err(chip->dev, "Couldn't Allow 5V-9V rc=%d\n", rc);
+	return rc;
 }
 
 static int handle_usb_insertion(struct smb135x_chg *chip)
@@ -2757,8 +2801,22 @@ static int handle_usb_insertion(struct smb135x_chg *chip)
 
 	usb_type_name = get_usb_type_name(reg);
 	usb_supply_type = get_usb_supply_type(reg);
-	pr_debug("inserted %s, usb psy type = %d stat_5 = 0x%02x\n",
-			usb_type_name, usb_supply_type, reg);
+	pr_debug("inserted %s, usb psy type = %d stat_5 = 0x%02x apsd_rerun = %d\n",
+			usb_type_name, usb_supply_type, reg, chip->apsd_rerun);
+	if (!chip->apsd_rerun && chip->usb_psy) {
+		if (usb_supply_type == POWER_SUPPLY_TYPE_USB) {
+			pr_debug("setting usb psy allow detection 1 SDP and rerun\n");
+			power_supply_set_allow_detection(chip->usb_psy, 1);
+			chip->apsd_rerun = true;
+			rerun_apsd(chip);
+			/* rising edge of src detect will happen in few mS */
+			return 0;
+		} else {
+			pr_debug("setting usb psy allow detection 1 DCP and no rerun\n");
+			power_supply_set_allow_detection(chip->usb_psy, 1);
+		}
+	}
+
 	if (chip->usb_psy) {
 		if (chip->bms_controlled_charging) {
 			/* enable charging on USB insertion */
@@ -2777,6 +2835,7 @@ static int handle_usb_insertion(struct smb135x_chg *chip)
 		else
 			smb135x_set_usb_chg_current(chip,USB_MAX_CURRENT);
 	}
+	chip->apsd_rerun = false;
 	return 0;
 }
 
@@ -2874,11 +2933,10 @@ static int src_detect_handler(struct smb135x_chg *chip, u8 rt_stat)
 		/* USB inserted */
 		chip->usb_present = usb_present;
 		handle_usb_insertion(chip);
-	} else if (chip->usb_present && !usb_present) {
-		/* CDP or SDP removed */
-		chip->usb_present = !chip->usb_present;
-		handle_usb_removal(chip);
+	} else if (usb_present && chip->apsd_rerun) {
+		handle_usb_insertion(chip);		
 	}
+
 	return 0;
 #else
 	bool usb_present = !!rt_stat;
@@ -4222,6 +4280,37 @@ static int get_battery_health(int temp)
 	return convert_data[last_level].value;
 }
 
+
+void print_reg_value(struct smb135x_chg *chip, int reg)
+{
+	u8 val,ret;	
+	ret=smb135x_read(chip,reg,&val);
+	if(ret<0){
+		printk("[smb135x] err\n");
+		return;
+	}
+	printk("[smb135x] reg[0x%x]=0x%x\n",reg,val);
+}
+
+void just_debug_show(struct smb135x_chg *chip)
+{
+	int i;
+
+	int regs[]={
+		0x00,0x02,0x03,0x04,0x05,0x06,0x07,
+		0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,
+		0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,
+		0x18,0x19,0x1A,0x1C,0x1D,0x1E,0x1F,
+		0x40,0x41,0x42,0x46,0x47,0x48,
+		0x49,0x4A,0x4B,0x4C,0x4D,0x4E,0x4F,
+		0x34,
+		0x50,0x51,0x52,0x53,0x54,0x55,0x56};
+
+	for(i=0;i<ARRAY_SIZE(regs);i++){
+		print_reg_value(chip,regs[i]);
+	}
+}
+
 static void smb135x_temp_monitor_work(struct work_struct *work) 
 {
 	struct delayed_work *dwork = to_delayed_work(work);
@@ -4235,6 +4324,8 @@ static void smb135x_temp_monitor_work(struct work_struct *work)
 	u8 reg;
 	int rc;
 	int current_ma;
+	static struct regulator * ldo13=0;
+	static int ldo13_is_on=0;
 	
 	pr_debug("skj smb135x_temp_monitor_work\n");
 	charging=smb135x_get_prop_batt_status(chip);	
@@ -4246,6 +4337,8 @@ static void smb135x_temp_monitor_work(struct work_struct *work)
 	pr_debug("skj smb135x chg:%d,cap:%d,usb:%d,temp:%d\n",
 		charging,capacity,charger_present,chip->current_bat_decidegc);	
 
+	//just_debug_show(chip);
+	
  	if(POWER_SUPPLY_HEALTH_OVERHEAT==chip->health || 
 		POWER_SUPPLY_HEALTH_COLD==chip->health){
 			value.intval=POWER_SUPPLY_STATUS_DISCHARGING;	
@@ -4299,6 +4392,32 @@ static void smb135x_temp_monitor_work(struct work_struct *work)
 			}
 		}
 	}	
+	
+	if(0==ldo13){
+		ldo13=regulator_get(0,"8916_l13");
+		if(IS_ERR(ldo13)){
+			printk("get ldo13 err =%p\n",ldo13);
+			ldo13=0;
+		}
+	}
+	if(0!=ldo13){
+		if(0!=charger_present && 0==ldo13_is_on){
+			ldo13_is_on=1;
+			printk("regulator_enable ldo13");
+			rc=regulator_enable(ldo13);
+			if(rc<0){
+				printk("regulator_enable ldo13 err=%d\n",(int)rc);
+			}
+		}
+		if(0==charger_present && 0!=ldo13_is_on){
+			ldo13_is_on=0;
+			printk("regulator_disable ldo13");
+			rc=regulator_disable(ldo13);
+			if(rc<0){
+				printk("regulator_disable ldo13 err=%d\n",(int)rc);
+			}			
+		}
+	}
 	
 	schedule_delayed_work(&chip->temp_monitor_work,msecs_to_jiffies(CHG_CHECK_PERIOD_MS));
 }

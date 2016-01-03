@@ -734,7 +734,7 @@
 		};
 
 		pmx_rd_nfc_int{
-			qcom,pins = <&gp 21>;
+			qcom,pins = <&gp 11>; // by skj
 			qcom,pin-func = <0>;
 			qcom,num-grp-pins = <1>;
 			label = "pmx_nfc_int";
@@ -1195,7 +1195,7 @@
 		};
 
 		gpio_led_pins {
-			qcom,pins = <&gp 116>, <&gp 117>, <&gp 10>; // by skj p2170
+			qcom,pins = <&gp 116>, <&gp 117>, <&gp 108>; // by skj a3001
 			qcom,num-grp-pins = <3>;
 			label = "gpio-led-pins";
 			gpio_led_off: led_off {

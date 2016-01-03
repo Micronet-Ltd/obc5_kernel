@@ -65,6 +65,9 @@ static unsigned char FT5X36_FIRMWARE_EKEY[] = {
 static unsigned char FT5526_FIRMWARE_EKEY[] = {
 	#include "ft5x36_firmware/A2001_FT5x46_V02_D01_20151022_app.h"
 };
+static unsigned char FT5526_FIRMWARE_JUNDA[] = {
+	#include "ft5x36_firmware/A2001_FT5x46_V02_D01_20151102_app.i"
+};
 #endif
 
 #if defined(CONFIG_PRODUCT_A3001)

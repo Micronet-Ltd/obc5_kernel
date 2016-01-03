@@ -476,6 +476,11 @@ struct input_keymap_entry {
 
 #define KEY_MICMUTE		248	/* Mute / unmute the microphone */
 
+//added by xuegang for A2001 20151029 begin
+#define KEY_SOS		249 
+#define KEY_PTT		250
+//added by xuegang for A2001 20151029 end
+
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
 #define BTN_MISC		0x100

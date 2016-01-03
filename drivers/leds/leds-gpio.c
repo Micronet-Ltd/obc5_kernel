@@ -58,6 +58,7 @@ static void gpio_led_set(struct led_classdev *led_cdev,
 	int level;
 
 // by skj
+#ifdef CONFIG_PRODUCT_P1071
 	struct regulator *gps_pwr_8916_l15;
 	int rc = 0;
 	
@@ -76,7 +77,8 @@ static void gpio_led_set(struct led_classdev *led_cdev,
 				printk("skj can not set 8916_l15 to %d\n",(int)value);
 		}		
 	}
-	
+#endif
+
 	if (value == LED_OFF)
 		level = 0;
 	else

@@ -52,9 +52,6 @@
 //#define pr_debug printk
 //#define pr_warning printk
 
-
-
-
 #define MAX_BUFFER_SIZE	512
 
 struct pn544_dev	
@@ -90,7 +87,7 @@ static irqreturn_t pn544_dev_irq_handler(int irq, void *dev_id)
 {
 	struct pn544_dev *pn544_dev = dev_id;
 
-	pn544_disable_irq(pn544_dev);
+	//pn544_disable_irq(pn544_dev);
 
 	/* Wake up waiting readers */
 	wake_up(&pn544_dev->read_wq);
@@ -107,7 +104,7 @@ static ssize_t pn544_dev_read(struct file *filp, char __user *buf, size_t count,
 	if (count > MAX_BUFFER_SIZE)
 		count = MAX_BUFFER_SIZE;
 
-	printk("[pn547] %s : reading %zu bytes.\n", __func__, count);
+	pr_debug("[pn547] %s : reading %zu bytes.\n", __func__, count);
 
 	mutex_lock(&pn544_dev->read_mutex);
 
@@ -131,7 +128,7 @@ static ssize_t pn544_dev_read(struct file *filp, char __user *buf, size_t count,
 	}
 
 	/* Read data */
-	msleep(100);
+	//msleep(100);
 	ret = i2c_master_recv(pn544_dev->client, tmp, count);
 	mutex_unlock(&pn544_dev->read_mutex);
 
@@ -151,12 +148,12 @@ static ssize_t pn544_dev_read(struct file *filp, char __user *buf, size_t count,
 		return -EFAULT;
 	}
 	
-	printk("[pn547] IFD->PC:");
+	pr_debug("[pn547] IFD->PC:");
 	for(i = 0; i < ret; i++)
 	{
-		printk("[pn547]  %02X", tmp[i]);
+		pr_debug("[pn547]  %02X", tmp[i]);
 	}
-	printk("\n");
+	pr_debug("\n");
 	
 	return ret;
 
@@ -183,21 +180,21 @@ static ssize_t pn544_dev_write(struct file *filp, const char __user *buf, size_t
 		return -EFAULT;
 	}
 
-	printk("[pn547]%s : writing %zu bytes.\n", __func__, count);
+	pr_debug("[pn547]%s : writing %zu bytes.\n", __func__, count);
 	/* Write data */
-	msleep(100);
+	//msleep(100);
 	ret = i2c_master_send(pn544_dev->client, tmp, count);
 	if (ret != count) 
 	{
 		pr_err("[pn547]%s : i2c_master_send returned %d\n", __func__, ret);
 		ret = -EIO;
 	}
-	printk("[pn547] PC->IFD:");
+	pr_debug("[pn547] PC->IFD:");
 	for(i = 0; i < count; i++)
 	{
-		printk("[pn547] %02X", tmp[i]);
+		pr_debug("[pn547] %02X", tmp[i]);
 	}
-	printk("\n");
+	pr_debug("\n");
 	
 	return ret;
 }
@@ -227,7 +224,7 @@ static long pn544_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 			/* 
 			power on with firmware download (requires hw reset)
 			 */
-			printk("[pn547]%s power on with firmware pn544_dev->ven_gpio = %d \n", __func__, pn544_dev->ven_gpio);
+			pr_debug("[pn547]%s power on with firmware pn544_dev->ven_gpio = %d \n", __func__, pn544_dev->ven_gpio);
 			gpio_set_value(pn544_dev->ven_gpio, 1);
 			gpio_set_value(pn544_dev->firm_gpio, 1);
 			msleep(10);
@@ -239,7 +236,7 @@ static long pn544_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 		else if (arg == 1) 
 		{
 			/* power on */
-			printk("[pn547]%s power on pn544_dev->ven_gpio = %d \n", __func__, pn544_dev->ven_gpio);
+			pr_debug("[pn547]%s power on pn544_dev->ven_gpio = %d \n", __func__, pn544_dev->ven_gpio);
 			gpio_set_value(pn544_dev->firm_gpio, 0);
 			gpio_set_value(pn544_dev->ven_gpio, 1);
 			msleep(50);
@@ -247,7 +244,7 @@ static long pn544_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 		else  if (arg == 0) 
 		{
 			/* power off */
-			printk("[pn547]%s power off pn544_dev->ven_gpio =%d \n", __func__, pn544_dev->ven_gpio);
+			pr_debug("[pn547]%s power off pn544_dev->ven_gpio =%d \n", __func__, pn544_dev->ven_gpio);
 			gpio_set_value(pn544_dev->firm_gpio, 0);
 			gpio_set_value(pn544_dev->ven_gpio, 0);
 			msleep(50);
@@ -294,9 +291,9 @@ static int nfc_parse_dt(struct device *dev,
 	if (pdata->irq_gpio < 0)
 		return pdata->irq_gpio;
 	rc = of_property_read_string(np, "qcom,clk-src", &pdata->clk_src_name);
-	printk("[pn547] qcom,clk-src = %s\n",pdata->clk_src_name);
+	pr_debug("[pn547] qcom,clk-src = %s\n",pdata->clk_src_name);
 	pdata->clkreq_gpio = of_get_named_gpio(np, "qcom,clk-gpio", 0);
-	printk("[pn547] qcom,clk-gpio = %d\n",pdata->clkreq_gpio);
+	pr_debug("[pn547] qcom,clk-gpio = %d\n",pdata->clkreq_gpio);
 	if (rc)
 		return -EINVAL;
 	return rc;
@@ -308,7 +305,7 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 	int ret,irq;
 	struct pn544_i2c_platform_data *platform_data;
 	struct pn544_dev *pn544_dev;
-	printk("enter %s function\n",__func__);
+	pr_debug("enter %s function\n",__func__);
 	if (client->dev.of_node) {
 		platform_data = devm_kzalloc(&client->dev,
 			sizeof(struct pn544_i2c_platform_data), GFP_KERNEL);
@@ -338,7 +335,7 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 		return  -ENODEV;
 	}
 	//IRQ 
-	printk("[pn547] start request platform_data->irq_gpio = %d\n",platform_data->irq_gpio);
+	pr_debug("[pn547] start request platform_data->irq_gpio = %d\n",platform_data->irq_gpio);
 	ret = gpio_request(platform_data->irq_gpio, "nfc_int");
 	if (ret)
 	{
@@ -352,7 +349,7 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 	}
 	
 	//VEN
-	printk("[pn547] start request platform_data->ven_gpio = %d\n",platform_data->ven_gpio);
+	pr_debug("[pn547] start request platform_data->ven_gpio = %d\n",platform_data->ven_gpio);
 	ret = gpio_request(platform_data->ven_gpio, "nfc_ven");
 	if (ret)
 	{
@@ -365,7 +362,7 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 		goto err_exit;
 	}
 	//FIRM
-	printk("[pn547] start request platform_data->firm_gpio = %d\n",platform_data->firm_gpio);
+	pr_debug("[pn547] start request platform_data->firm_gpio = %d\n",platform_data->firm_gpio);
 	ret = gpio_request(platform_data->firm_gpio, "nfc_firm");
 	if (ret)
 	{
@@ -401,10 +398,10 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 		goto err_clk;
 	}
 	
-	printk("[pn547] **qcom,clk-src = %s*********\n",platform_data->clk_src_name);
+	pr_debug("[pn547] **qcom,clk-src = %s*********\n",platform_data->clk_src_name);
 
 	if (gpio_is_valid(platform_data->clkreq_gpio)) {
-		printk("[pn547] request clkreq_gpio = %d\n",platform_data->clkreq_gpio);
+		pr_debug("[pn547] request clkreq_gpio = %d\n",platform_data->clkreq_gpio);
 		ret = gpio_request(platform_data->clkreq_gpio,
 			"nfc_clkreq_gpio");
 		if (ret) {
