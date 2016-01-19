@@ -4673,7 +4673,11 @@ static int otg_power_get_property_usb(struct power_supply *psy,
 		break;
 	/* Reflect USB enumeration */
 	case POWER_SUPPLY_PROP_ONLINE:
+#ifdef CONFIG_SMB135X_CHARGER
+		val->intval = !!test_bit(B_SESS_VLD, &motg->inputs);
+#else
 		val->intval = motg->online;
+#endif
 		break;
 	case POWER_SUPPLY_PROP_TYPE:
 		val->intval = psy->type;

@@ -407,10 +407,7 @@ struct mdss_panel_info {
 	int blank_state;
 
 	uint32_t panel_dead;
-    //Added by jiao.shp for lcd rotate
-//    #if defined(CONFIG_QL1001_P2170) || defined(CONFIG_QL1001_J20) || defined(CONFIG_QL1001_J20TMP)||defined(CONFIG_QL1001_P2170FHD) 
-    u32 panel_orientation;
-//    #endif
+	u32 panel_orientation;
 	bool dynamic_switch_pending;
 	bool is_lpm_mode;
 	bool is_split_display;

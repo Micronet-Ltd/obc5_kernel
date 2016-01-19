@@ -444,8 +444,10 @@
 		compatible = "ehang,watchdog-pin";
 		pinctrl-names = "default";
 		pinctrl-0 = <&obc_watchdog_pin>;		
-		ehang,toggle-pin = <&msm_gpio 91 0>;
-		//ehang,suspend-state-pin = <&msm_gpio 91 0>;
+		ehang,toggle-pin = <&msm_gpio 2 0>;
+		ehang,suspend-state-pin = <&msm_gpio 91 0>;
+		//ehang,port-det-pin = <&msm_gpio 69 0>;
+		//ehang,usb-switch-pin = <&msm_gpio 15 0>;
 		ehang,high-delay=<1000>;
 		ehang,low-delay=<5000>;
 	};
@@ -681,8 +683,7 @@
 	};
 };
 
-#include "dsi_panel_samsung_s6d7aa0x01_1280_800_video.dtsi"
-#include "dsi_panel_boe_ili6136s_wxga_video.dtsi"
+#include "dsi-panel-no-panel-video.dtsi"
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
@@ -694,22 +695,15 @@
 };
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_samsung_s6d7aa0x01_1280_800_video>;//jiao.shp
+	qcom,dsi-pref-prim-pan = <&dsi_no_panel_video>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active>;
 	pinctrl-1 = <&mdss_dsi_suspend>;
 
 	qcom,platform-reset-gpio = <&msm_gpio 25 0>;
-	qcom,platform-enable-gpio = <&msm_gpio 97 0>;
-    qcom,platform-bklight-en-gpio = <&msm_gpio 98 0>;
 };
 
-/*Added by jiao.shp sumsung ic*/
-&dsi_samsung_s6d7aa0x01_1280_800_video{
-	qcom,cont-splash-enabled;
-};
-
-&dsi_boe_ili6136s_wxga_video{
+&dsi_no_panel_video{
 	qcom,cont-splash-enabled;
 };
 
@@ -836,4 +830,9 @@
 		linux,name = "flashlight";
 		linux,default-trigger = "flashlight-trigger";
 	};
+};
+
+// by skj
+&pm8916_l11 {
+	regulator-always-on;
 };

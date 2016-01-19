@@ -140,7 +140,7 @@ void panic(const char *fmt, ...)
 
 	if (!panic_blink)
 		panic_blink = no_blink;
-#if 0 // temp debug
+#if 1 // temp debug
 	if (panic_timeout > 0) {
 		/*
 		 * Delay timeout seconds before rebooting the machine.

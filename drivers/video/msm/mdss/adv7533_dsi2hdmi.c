@@ -18,6 +18,7 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/fs.h>
+#include <linux/switch.h>
 #include <linux/delay.h>
 #include <linux/i2c.h>
 #include <linux/gpio.h>
@@ -76,6 +77,7 @@ struct adv7533_platform_data {
 	struct pinctrl_state *pinctrl_state_suspend;
 	bool disable_gpios;
 	bool adv_output;
+	struct switch_dev audio_sdev;
 };
 
 static struct adv7533_reg_cfg setup_cfg[] = {
@@ -669,6 +671,9 @@ static int adv7533_probe(struct i2c_client *client_,
 
 	client = client_;
 
+	if (strnstr(mdss_mdp_panel, "no_display", MDSS_MAX_PANEL_LEN))
+		 return 0;
+
 	if (client->dev.of_node) {
 		pdata = devm_kzalloc(&client->dev,
 			sizeof(struct adv7533_platform_data), GFP_KERNEL);
@@ -761,6 +766,14 @@ static int adv7533_probe(struct i2c_client *client_,
 		goto p_err;
 	}
 
+	pdata->audio_sdev.name = "hdmi_audio";
+	if (switch_dev_register(&pdata->audio_sdev) < 0) {
+		pr_err("%s: hdmi_audio switch registration failed\n",
+			__func__);
+		ret = -ENODEV;
+		goto p_err;
+	}
+
 	switch (pdata->audio) {
 	case ADV7533_AUDIO_ON:
 		ret = adv7533_write_regs(pdata, I2S_cfg, ARRAY_SIZE(I2S_cfg));
@@ -769,6 +782,7 @@ static int adv7533_probe(struct i2c_client *client_,
 				__func__, ret);
 			goto p_err;
 		}
+		switch_set_state(&pdata->audio_sdev, 1);
 		break;
 	case ADV7533_AUDIO_OFF:
 	default:
@@ -791,6 +805,7 @@ static int adv7533_remove(struct i2c_client *client)
 	int ret = 0;
 
 	pm_runtime_disable(&client->dev);
+	switch_dev_unregister(&pdata->audio_sdev);
 	ret = adv7533_gpio_configure(pdata, false);
 
 	devm_kfree(&client->dev, pdata);

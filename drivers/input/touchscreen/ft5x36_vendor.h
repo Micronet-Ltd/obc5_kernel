@@ -66,7 +66,7 @@ static unsigned char FT5526_FIRMWARE_EKEY[] = {
 	#include "ft5x36_firmware/A2001_FT5x46_V02_D01_20151022_app.h"
 };
 static unsigned char FT5526_FIRMWARE_JUNDA[] = {
-	#include "ft5x36_firmware/A2001_FT5x46_V02_D01_20151102_app.i"
+	#include "ft5x36_firmware/A2001_FT5x46_V04_JD_20160106_app.i"
 };
 #endif
 

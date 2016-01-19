@@ -32,7 +32,7 @@ static struct v4l2_file_operations msm_sensor_v4l2_subdev_fops;
 #endif
 
 /* add by shengweiguang begin */
-#ifdef CONFIG_PRODUCT_A2001
+#ifdef CONFIG_PRODUCT_DARLING_OIS_ACTUATOR
 extern struct msm_camera_i2c_client *ehang_actuator_camera_i2c_client;
 #endif
 /* add by shengweiguang end */
@@ -951,14 +951,14 @@ power_up_failed:
 	return rc;
 }
 //added by yangze for SW00028457 (qc805) 2014-1-12 end
-
+ 
 int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	struct msm_camera_power_ctrl_t *power_info;
 	enum msm_camera_device_type_t sensor_device_type;
 	struct msm_camera_i2c_client *sensor_i2c_client;
 	struct msm_camera_sensor_board_info *sd; //Added by hanjianfeng for camera power control 20140809
-#ifdef CONFIG_PRODUCT_A2001
+#ifdef CONFIG_PRODUCT_DARLING_OIS_ACTUATOR
 	int rc;
 	uint8_t data_af[8]={0xff,0,0,0,0,0,0,0}; // add by shengweiguang for ois actuator power down "ka"
 #endif
@@ -969,16 +969,19 @@ int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 	}
 
 /* add by shengweiguang begin */	
-#ifdef CONFIG_PRODUCT_A2001
-	rc = msm_camera_cci_i2c_write_seq(ehang_actuator_camera_i2c_client,0x01, &data_af[0], 8);
-	if (rc < 0)
+#ifdef CONFIG_PRODUCT_DARLING_OIS_ACTUATOR
+	if (ehang_actuator_camera_i2c_client != NULL)
 	{
-		pr_err("SWGX : power down set af  failed !!!!!!!!!!!!\n");
-	}
-	else
-	{
-		pr_err("SWGX : power down set af  success !!!!!!!!!!!!\n");
-		msleep(200);
+		rc = msm_camera_cci_i2c_write_seq(ehang_actuator_camera_i2c_client,0x01, &data_af[0], 8);
+		if (rc < 0)
+		{
+			pr_err("SWGX : power down set af  failed !!!!!!!!!!!!\n");
+		}
+		else
+		{
+			pr_err("SWGX : power down set af  success !!!!!!!!!!!!\n");
+			msleep(200);
+		}
 	}
 #endif
 /* add by shengweiguang end */
@@ -1169,7 +1172,7 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		return rc;
 	}
 
-	CDBG("%s: read id: 0x%x expected id 0x%x:\n", __func__, chipid,
+	pr_info(" SWGO : %s: read id: 0x%x expected id 0x%x:\n", __func__, chipid,
 		slave_info->sensor_id);
 	if (chipid != slave_info->sensor_id) {
 		pr_err("msm_sensor_match_id chip id doesnot match\n");
@@ -1189,7 +1192,12 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 			return -ENODEV;
 		}
 	}
+	else
+	{
+		pr_err("SWGX : NO CAMERA ID PIN !!!!!!!!!!!!!***********\n");
+	}
 	// added by yangze for check pin value of camera id (ql1001) 2014-06-11 end
+	
 	return rc;
 }
 

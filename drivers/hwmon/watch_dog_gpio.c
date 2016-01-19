@@ -28,6 +28,8 @@
 struct watch_dog_pin_info{
 	int toggle_pin;
 	int suspend_state_pin;
+	int port_det_pin;
+	int usb_switch_pin;
 	int high_delay;
 	int low_delay;
 	struct delayed_work	toggle_work;
@@ -51,12 +53,24 @@ static void watchdog_toggle_work(struct work_struct *work)
 	inf->state=1;
 }
 
+static irqreturn_t port_det_handler(int irq, void *dev_id)
+{
+	struct watch_dog_pin_info *inf=dev_id;
+
+	if(0==gpio_get_value(inf->port_det_pin))
+		gpio_direction_output(inf->usb_switch_pin,0);	
+	else
+		gpio_direction_output(inf->usb_switch_pin,1);	
+	return IRQ_HANDLED;
+}
+
 static int watchdog_pin_probe(struct platform_device *op)
 {
 	struct device *dev = &op->dev;
 	struct device_node *np = op->dev.of_node;	
 	struct watch_dog_pin_info *inf;
 	int rc;
+	int irq;
 
 	if(np==NULL){		
 		dev_err(dev, "Can not find config!\n");
@@ -87,7 +101,39 @@ static int watchdog_pin_probe(struct platform_device *op)
 			dev_err(dev, "state pin is busy!\n");		
 		gpio_direction_output(inf->suspend_state_pin,1);
 	}
+
+	inf->port_det_pin=
+		of_get_named_gpio(np,"ehang,port-det-pin",0);
+	if(gpio_is_valid(inf->port_det_pin)){
+		rc=devm_gpio_request(dev,inf->port_det_pin,"port_det");	
+		if(rc<0)
+			dev_err(dev, "port det pin is busy!\n");		
+		gpio_direction_input(inf->port_det_pin);	
+	}
 	
+	inf->usb_switch_pin=
+		of_get_named_gpio(np,"ehang,usb-switch-pin",0);
+	if(gpio_is_valid(inf->usb_switch_pin) && gpio_is_valid(inf->port_det_pin)){
+		rc=devm_gpio_request(dev,inf->usb_switch_pin,"usb_switch");	
+		if(rc<0)
+			dev_err(dev, "usb switch pin is busy!\n");
+		if(0==gpio_get_value(inf->port_det_pin))
+			gpio_direction_output(inf->usb_switch_pin,0);	
+		else
+			gpio_direction_output(inf->usb_switch_pin,1);
+
+		irq= gpio_to_irq(inf->port_det_pin);
+		rc = devm_request_threaded_irq(dev, irq, NULL,
+				port_det_handler,
+				IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+				"port_det_handler", inf);
+		if (rc < 0) {
+			dev_err(dev,
+				"request_irq for irq=%d  failed rc = %d\n",
+				irq, rc);
+		}	
+	}	
+		
 	rc = of_property_read_u32(np, "ehang,high-delay",
 						&inf->high_delay);
 
