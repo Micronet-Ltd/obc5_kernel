@@ -24,91 +24,6 @@
 
 &soc {
 		i2c@78b9000 { /* BLSP1 QUP5 */
-		Goodix-TS@14 {
-			compatible = "goodix,Goodix-TS";
-			reg = <0x14>;
-			interrupt-parent = <&msm_gpio>;
-			interrupts = <13 0x2008>;
-			vdd-supply = <&pm8916_l17>;
-			vcc-i2c-supply = <&pm8916_l6>;
-			pinctrl-names = "pmx_ts_active","pmx_ts_suspend";
-			pinctrl-0 = <&ts_int_active &ts_reset_active>;
-			pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
-			goodix,reset-gpio = <&msm_gpio 12 0x00>;
-			goodix,display-coords = <0 0 720 1080>;
-			goodix,panel-coords = <0 0 720 1200>;
-			goodix,irq-gpio = <&msm_gpio 13 0x00>;
-			goodix,button-map = <139 172 158>;
-			goodix,i2c-pull-up;
-			goodix,module-name = "unknow","RuiJieEn","ShiTong","unknow","unknow","unknow";
-			/*gt968,test panel*/
-			goodix,cfg-data0 = [
-				00 1C 02 c0 03 0a 05 01 01 0F
-                            23 0F 5F 41 03 05 00 00 00 00
-                            00 00 00 00 00 00 00 91 00 0A
-                            28 00 B8 0B 00 00 00 9A 03 25
-                            00 00 00 00 00 03 64 32 00 00
-                            00 00 00 00 00 00 00 00 00 00
-                            00 00 00 00 00 00 00 00 00 00
-                            00 00 00 00 00 00 0F 2F 48 00
-                            F7 30 20 FF FF 27 00 00 00 00
-                            00 00 00 00 00 00 00 00 00 00
-                            00 00 00 00 00 00 00 00 00 00
-                            00 00 08 0A 0C 0E 10 12 14 16
-                            18 1A FF FF FF FF FF FF FF FF
-                            FF FF FF FF FF FF FF FF FF FF
-                            FF FF 1D 1E 1F 20 22 24 28 29
-                            00 02 04 05 06 08 0A 0C 0E FF
-                            FF FF FF FF FF FF FF FF FF FF
-                            FF FF FF FF FF FF FF FF FF FF
-                            FF FF FF FF 00 00 00 00 00 00
-                            00 00 00 00 00 00 00 00 00 00
-                            00 00 00 00 00 00 00 00 00 00
-                            00 00 00 00 00 00 00 00 00 00
-                            00 00 00 00 00 00 E2 01];
-			/*gt915,lianheruitai module panel*/
-			goodix,cfg-data1 = [
-				00 D0 02 00 05 05 35 D1 01 88 
-                            23 08 50 37 03 05 00 00 00 00 
-                            00 00 08 17 1A 1D 14 8A 0A 0B 
-                            3B 3D 0C 08 00 00 00 01 03 1D 
-                            64 05 00 00 00 00 00 00 00 00 
-                            00 27 59 94 E5 02 08 00 00 04 
-                            AB 2A 00 93 32 00 80 3B 00 70 
-                            45 00 63 52 00 63 10 30 50 00 
-                            50 40 30 BB BB 27 00 00 00 00 
-                            00 00 00 00 00 00 00 00 00 00 
-                            00 00 00 00 00 00 00 00 00 00 
-                            00 00 02 04 06 08 0A 0C 0E 10 
-                            12 14 16 FF FF FF 00 00 00 00 
-                            00 00 00 00 00 00 00 00 00 00 
-                            00 00 00 02 04 06 08 0A 0F 10 
-                            12 13 16 18 1C 1D 1E 1F 20 21 
-                            22 24 FF FF FF FF FF FF 00 00 
-                            00 00 00 00 00 00 00 00 00 00 
-                            50 00 00 00 FE 01];
-			/*gt915,ouboxin:ruijieen MODULE*/
-			goodix,cfg-data2 = [
-				00 D0 02 00 05 05 05 01 01 08
-                            23 05 50 3C 03 05 00 00 00 00
-                            00 00 00 00 00 00 00 8A 0B 0C
-                            1E 00 31 0D 00 00 00 9A 03 1D
-                            00 00 00 00 00 00 00 00 00 00
-                            00 18 46 94 C5 02 05 00 00 04
-                            92 1A 00 75 21 00 60 29 00 50
-                            33 00 43 3F 00 44 10 38 58 00
-                            F7 30 20 FF FF 27 00 00 00 00
-                            00 00 00 00 00 00 00 00 00 00
-                            00 00 00 00 00 00 00 00 00 00
-                            00 00 02 04 06 08 0A 0C 0E 10
-                            12 14 16 18 FF FF 00 00 00 00
-                            00 00 00 00 00 00 00 00 00 00
-                            00 00 00 02 04 06 08 0A 0C 0F
-                            10 12 16 18 1C 1D 1E 1F 20 21
-                            22 24 26 FF FF FF FF FF 00 00
-                            00 FF FF FF FF FF FF FF FF FF
-                            FF FF FF FF E8 01];
-		};
 		focaltech@38 {
 			compatible = "focaltech,FT5x36";
 			reg = <0x38>;
@@ -129,23 +44,21 @@
 			focaltech,max_touch_point = <5>;
 			focaltech,reset-gpio = <&msm_gpio 12 0x00>;
 			focaltech,irq-gpio = <&msm_gpio 13 0x00>;
-			focaltech,display-coords = <0 0 800 1280>;//jiao.shp
-			focaltech,panel-coords = <0 0 850 1330>;
+			focaltech,display-coords = <0 0 720 1280>;
+			focaltech,panel-coords = <0 0 720 1420>;
 			focaltech,button-map= <139 172 158>;
 			focaltech,no-force-update;
 			focaltech,i2c-pull-up;
 			focaltech,auto_clb;
-            focaltech,tp_gesture_support;/*added by jiao.shp for tp gesture*/
-            focaltech,tp_glove_mode_support;
 		};
 	};
 	gen-vkeys {
 		compatible = "qcom,gen-vkeys";
 		label = "FT5x36";
-		qcom,disp-maxx = <800>;
-		qcom,disp-maxy = <1280>;//jiao.shp
-		qcom,panel-maxx = <850>;
-		qcom,panel-maxy = <1330>;
+		qcom,disp-maxx = <720>;
+		qcom,disp-maxy = <1280>;
+		qcom,panel-maxx = <720>;
+		qcom,panel-maxy = <1408>;
 		qcom,key-codes = <139 172 158>;
 		qcom,y-offset = <0>;
 	};
@@ -393,10 +306,10 @@
 		pinctrl-0 = <&rpr0521c_default>;
 		pinctrl-1 = <&rpr0521c_sleep>;
 		interrupt-parent = <&msm_gpio>;
-		interrupts = <113 0x2002>;
+		interrupts = <120 0x2002>;
 		vdd-supply = <&pm8916_l17>;
 		vio-supply = <&pm8916_l6>;
-		rpr0521c,irq-gpio = <&msm_gpio 113 0x2002>;
+		rpr0521c,irq-gpio = <&msm_gpio 120 0x2002>;
 		rpr0521c,prox_th_min = <50>;
 		rpr0521c,prox_th_max = <150>;
 	};
@@ -522,7 +435,7 @@
 		asoc-codec = <&stub_codec>, <&pm8916_tombak_dig>;
 		asoc-codec-names = "msm-stub-codec.1", "tombak_codec";
 		qcom,ext-spk-amp-gpio = <&msm_gpio 16 0>;
-		qcom,hp-spk-switch-gpio = <&msm_gpio 9 0>;
+		qcom,hp-spk-switch-gpio = <&msm_gpio 3 0>;
 	};
 };
 
@@ -537,16 +450,6 @@
 	status = "ok";
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart_console_sleep>;
-};
-
-&spmi_bus {
-	qcom,pm8916@0 {
-		pm8916_pon: qcom,power-on@800 {
-			qcom,pon_2 {
-				linux,code = <115>;
-			};
-		};
-	};
 };
 
 &soc {
@@ -570,7 +473,7 @@
 			label = "volume_up";
 			gpios = <&msm_gpio 107 0x1>;
 			linux,input-type = <1>;
-			linux,code = <114>;
+			linux,code = <115>;
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
@@ -683,7 +586,9 @@
 	};
 };
 
-#include "dsi-panel-no-panel-video.dtsi"
+#include "dsi-panel-lead-otm1284-cpt-720p-video.dtsi"
+#include "dsi-panel-h8394d-txd-innolux5p5-hd-video.dtsi"
+#include "dsi-panel-h8394f-jd-auo5p5-hd-video.dtsi"
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
@@ -695,7 +600,7 @@
 };
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_no_panel_video>;
+	qcom,dsi-pref-prim-pan = <&dsi_h8394d_txd_innolux5p5_hd_vid>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active>;
 	pinctrl-1 = <&mdss_dsi_suspend>;
@@ -703,9 +608,18 @@
 	qcom,platform-reset-gpio = <&msm_gpio 25 0>;
 };
 
-&dsi_no_panel_video{
-	qcom,cont-splash-enabled;
+&dsi_h8394d_txd_innolux5p5_hd_vid {
+ //     qcom,cont-splash-enabled;
 };
+
+&dsi_h8394f_jd_auo5p5_hd_vid {
+      qcom,cont-splash-enabled;
+};
+
+&dsi_lead_otm1284_720p_cpt_vid {
+       qcom,cont-splash-enabled;
+};
+
 
 &pm8916_vadc {
 	chan@30 {
@@ -726,7 +640,7 @@
 		qcom,rpull-up-kohm = <100>;
 		qcom,vref-batt-therm = <1800000>;
 
-		#include "batterydata-palladium-5500.dtsi"
+		#include "batterydata-palladium-2000.dtsi"
 	};
 };
 
