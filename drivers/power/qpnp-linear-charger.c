@@ -1299,6 +1299,10 @@ static void qpnp_batt_external_power_changed(struct power_supply *psy)
 				POWER_SUPPLY_PROP_CURRENT_MAX, &ret);
 		current_ma = ret.intval / 1000;
 
+		// by skj
+		if(current_ma<500)
+			current_ma=500;
+		
 		if (current_ma == chip->prev_max_ma)
 			goto skip_current_config;
 

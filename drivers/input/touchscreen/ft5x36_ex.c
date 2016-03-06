@@ -39,6 +39,7 @@ int fts5x46_ctpm_fw_upgrade(struct i2c_client * client, u8* pbt_buf, u32 dw_lent
 
 int fts_ctpm_fw_upgrade(struct i2c_client *client, u8 *pbt_buf, u32 dw_lenth);
 int fts_read_project_code(struct i2c_client * client, char * pProjectCode);
+int fts_ctpm_fw_upgrade_ReadVendorID(struct i2c_client *client, char *ucPVendorID);
 	
 static DEFINE_MUTEX(g_device_mutex);
 
@@ -126,8 +127,8 @@ int fts_ctpm_fw_upgrade_with_i_file(struct i2c_client *client)
 	/*modify by zengguang for ft6436 at 2014.10.14 begin*/
 	fts_read_reg(client, FTS_REG_VENDOR_ID, &uc_tp_fm_TP_ID);
        printk(KERN_INFO "FT5x36:module vendor id = 0x%x\n", uc_tp_fm_TP_ID);
-	if(uc_tp_fm_TP_ID == 0 || uc_tp_fm_TP_ID == 0xA0){
-		uc_tp_fm_TP_ID = fts_read_project_code(client, temp);
+	if(uc_tp_fm_TP_ID == 0){
+		uc_tp_fm_TP_ID = fts_ctpm_fw_upgrade_ReadVendorID(client, temp);
 		printk(KERN_INFO "get maker id failed, reget module vendor id = 0x%x\n", uc_tp_fm_TP_ID);
 	}
 	/*modify by zengguang for ft6436 at 2014.10.14 end*/
@@ -292,7 +293,7 @@ int fts_ctpm_fw_upgrade_with_i_file(struct i2c_client *client)
     case FT6X06_VENDOR0x86_EKEY:
         #if defined(CONFIG_PRODUCT_A2001)|| defined(CONFIG_PRODUCT_A3001)
     	fw_len = sizeof(FT5526_FIRMWARE_EKEY);
-    	pr_info("FT5X26:upgrade with ekey 5526 firmware,firmware size is %d.\n",fw_len);	
+    	pr_info("FT5X26:upgrade with ekey 5446 firmware,firmware size is %d.\n",fw_len);	
     	/*judge the fw that will be upgraded
     	         * if illegal, then stop upgrade and return.
     	        */
@@ -321,7 +322,7 @@ int fts_ctpm_fw_upgrade_with_i_file(struct i2c_client *client)
 	case FT5X46_VENDOR0x79_JUNDA:
         #if defined(CONFIG_PRODUCT_A2001)
     	fw_len = sizeof(FT5526_FIRMWARE_JUNDA);
-    	pr_info("FT5X26:upgrade with ekey 5526 firmware,firmware size is %d.\n",fw_len);	
+    	pr_info("FT5X26:upgrade with junda 5446 firmware,firmware size is %d.\n",fw_len);	
     	/*judge the fw that will be upgraded
     	         * if illegal, then stop upgrade and return.
     	        */
@@ -329,28 +330,21 @@ int fts_ctpm_fw_upgrade_with_i_file(struct i2c_client *client)
     		dev_err(&client->dev, "%s:FW length error\n", __func__);
     		return -EIO;
     	}
-        
-    	if ((FT5526_FIRMWARE_JUNDA[fw_len - 8] ^ FT5526_FIRMWARE_JUNDA[fw_len - 6]) == 0xFF
-    		&& (FT5526_FIRMWARE_JUNDA[fw_len - 7] ^ FT5526_FIRMWARE_JUNDA[fw_len - 5]) == 0xFF
-    		&& (FT5526_FIRMWARE_JUNDA[fw_len - 3] ^ FT5526_FIRMWARE_JUNDA[fw_len - 4]) == 0xFF) {
-    		/*FW upgrade */
-    		pbt_buf = FT5526_FIRMWARE_JUNDA;
-    		/*call the upgrade function */
-    		i_ret = fts5x46_ctpm_fw_upgrade(client, pbt_buf, sizeof(FT5526_FIRMWARE_JUNDA));
-    		if (i_ret != 0)
-    			dev_err(&client->dev, "%s:upgrade failed. err. i_ret is %d\n",
-    					__func__,i_ret);
-    		else{
-                            if(ft5x36_ts->pdata->auto_clb)
-    			       fts_ctpm_auto_clb(client);	/*start auto CLB */
-    		}
-    	}
+
+  		/*FW upgrade */
+  		pbt_buf = FT5526_FIRMWARE_JUNDA;
+  		/*call the upgrade function */
+  		i_ret = fts5x46_ctpm_fw_upgrade(client, pbt_buf, sizeof(FT5526_FIRMWARE_JUNDA));
+  		if (i_ret != 0)
+  			dev_err(&client->dev, "%s:upgrade failed. err. i_ret is %d\n",
+  					__func__,i_ret);
+
     	#endif 
       break;
         case FT5X46_VENDOR0xD8_LEAD:
         #if defined(CONFIG_QL1001_J20) || defined(CONFIG_QL1001_J20TMP)
     	fw_len = sizeof(FT5526_FIRMWARE_LEAD);
-    	pr_info("FT5X26:upgrade with ekey 5526 firmware,firmware size is %d.\n",fw_len);	
+    	pr_info("FT5X26:upgrade with lead 5526 firmware,firmware size is %d.\n",fw_len);	
     	/*judge the fw that will be upgraded
     	         * if illegal, then stop upgrade and return.
     	        */
@@ -426,10 +420,12 @@ u8 fts_ctpm_get_i_file_ver(struct i2c_client *client)
 	
 	/*modified by zengguang for QL600 platform  ctp shenyue vendor id 0x11 201401014 begin*/
 	fts_read_reg(client, FTS_REG_VENDOR_ID, &uc_tp_fm_TP_ID);
-	if(uc_tp_fm_TP_ID == 0 || uc_tp_fm_TP_ID == 0xA0){
-		uc_tp_fm_TP_ID = fts_read_project_code(client, temp);
+	if(uc_tp_fm_TP_ID == 0){
+		pr_err( "read vendor id failed, the vendor id is 0x%x after read again\n", uc_tp_fm_TP_ID);
+		uc_tp_fm_TP_ID = fts_ctpm_fw_upgrade_ReadVendorID(client, temp);
 		printk(KERN_INFO "read vendor id failed, the vendor id is 0x%x after read again\n", uc_tp_fm_TP_ID);
 	}
+	pr_err( "read vendor id failed, the vendor id is 0x%x after read again\n", uc_tp_fm_TP_ID);
 	/*modified  by zengguang for QL600 platform  ctp shenyue vendor id 0x11 201401014 end*/
 
 	switch (uc_tp_fm_TP_ID) {
@@ -747,6 +743,130 @@ static void fts_get_upgrade_info(struct Upgrade_Info *upgrade_info,struct i2c_cl
 	}
 }
 
+int HidI2c_To_StdI2c(struct i2c_client * client)
+{
+	u8 auc_i2c_write_buf[10] = {0};
+	u8 reg_val[10] = {0};
+	int iRet = 0;
+
+	auc_i2c_write_buf[0] = 0xEB;
+	auc_i2c_write_buf[1] = 0xAA;
+	auc_i2c_write_buf[2] = 0x09;
+    iRet = fts_i2c_Write(client, auc_i2c_write_buf, 3);
+    reg_val[0] = reg_val[1] =  reg_val[2] = 0x00;
+	msleep(30);    
+	iRet = fts_i2c_Read(client, auc_i2c_write_buf, 0, reg_val, 3);
+	pr_info("Change to STDI2cValue,REG1 = 0x%x,REG2 = 0x%x,REG3 = 0x%x, iRet=%d\n",
+					reg_val[0], reg_val[1], reg_val[2], iRet);
+	if (reg_val[0] == 0xEB && reg_val[1] == 0xAA && reg_val[2] == 0x08) 
+	{
+		pr_info("HidI2c_To_StdI2c is successful.\n");
+		iRet = 1;
+	}
+	else
+	{
+		pr_err("HidI2c_To_StdI2c is error.\n");
+		iRet = 0;
+	}
+
+	return iRet;
+}
+
+int fts_ctpm_fw_upgrade_ReadVendorID(struct i2c_client *client, char *ucPVendorID)
+{
+	u8 reg_val[4] = {0};
+	u32 i = 0;
+	u8 auc_i2c_write_buf[10];
+	int i_ret;
+	struct Upgrade_Info upgradeinfo;
+	*ucPVendorID = 0;
+	i_ret = HidI2c_To_StdI2c(client);
+	if (i_ret == 0) 
+	{
+		pr_err("HidI2c change to StdI2c fail ! \n");
+	}
+	
+	fts_get_upgrade_info(&upgradeinfo,client);
+	
+	for (i = 0; i < FTS_UPGRADE_LOOP; i++) 
+	{
+		/*********Step 1:Reset  CTPM *****/
+		fts_write_reg(client, 0xfc, FTS_UPGRADE_AA);
+		msleep(upgradeinfo.delay_aa);
+		fts_write_reg(client, 0xfc, FTS_UPGRADE_55);
+		msleep(200);
+		/*********Step 2:Enter upgrade mode *****/
+		i_ret = HidI2c_To_StdI2c(client);
+		if (i_ret == 0) 
+		{
+			pr_err("HidI2c change to StdI2c fail ! \n");
+		}
+		msleep(5+i*2);
+		auc_i2c_write_buf[0] = FTS_UPGRADE_55;
+		auc_i2c_write_buf[1] = FTS_UPGRADE_AA;
+		i_ret = fts_i2c_Write(client, auc_i2c_write_buf, 2);
+		if (i_ret < 0) {
+			pr_err("failed writing  0x55 and 0xaa ! \n");
+			continue;
+		}
+		/*********Step 3:check READ-ID***********************/
+		msleep(5+i*2);
+		auc_i2c_write_buf[0] = 0x90;
+		auc_i2c_write_buf[1] = auc_i2c_write_buf[2] = auc_i2c_write_buf[3] = 0x00;
+		reg_val[0] = reg_val[1] = 0x00;
+		fts_i2c_Read(client, auc_i2c_write_buf, 4, reg_val, 2);
+		if (reg_val[0] == upgradeinfo.upgrade_id_1 && reg_val[1] == upgradeinfo.upgrade_id_2) {
+			pr_err("[FTS] Step 3: READ OK CTPM ID,ID1 = 0x%x,ID2 = 0x%x\n", reg_val[0], reg_val[1]);
+			break;
+		} 
+		else 
+		{
+			dev_err(&client->dev, "[FTS] Step 3: CTPM ID,ID1 = 0x%x,ID2 = 0x%x\n", reg_val[0], reg_val[1]);
+			continue;
+		}
+	}
+	if (i >= FTS_UPGRADE_LOOP)
+		return -EIO;
+	/*********Step 4: read vendor id from app param area***********************/
+	msleep(10);
+	auc_i2c_write_buf[0] = 0x03;
+	auc_i2c_write_buf[1] = 0x00;
+	auc_i2c_write_buf[2] = 0xd7;
+	auc_i2c_write_buf[3] = 0x84;
+	for (i = 0; i < FTS_UPGRADE_LOOP; i++) 
+	{
+		fts_i2c_Write(client, auc_i2c_write_buf, 4);		
+		msleep(5);
+		reg_val[0] = reg_val[1] = 0x00;
+		i_ret = fts_i2c_Read(client, auc_i2c_write_buf, 0, reg_val, 2);
+		if (0 != reg_val[0]) 
+		{
+			*ucPVendorID = reg_val[0];
+			pr_err("In upgrade Vendor ID Mismatch, REG1 = 0x%x, REG2 = 0x%x, Definition:0x%x, i_ret=%d\n", reg_val[0], reg_val[1], 0, i_ret);
+			break;
+		} 
+		else 
+		{
+			*ucPVendorID = reg_val[0];
+			pr_err("In upgrade Vendor ID, REG1 = 0x%x, REG2 = 0x%x\n", reg_val[0], reg_val[1]);
+			continue;
+		}
+	}
+	msleep(50);
+	/*********Step 5: reset the new FW***********************/
+	pr_err("Step 5: reset the new FW\n");
+	auc_i2c_write_buf[0] = 0x07;
+	fts_i2c_Write(client, auc_i2c_write_buf, 1);
+	msleep(200);	
+	i_ret = HidI2c_To_StdI2c(client);	
+	if (i_ret == 0) 
+	{
+		pr_err("HidI2c change to StdI2c fail ! \n");
+	}
+	msleep(10);
+	return ucPVendorID[0];
+}
+
 int fts_read_project_code(struct i2c_client * client, char * pProjectCode) {
 	u8 reg_val[2] = {0};
 	u32 i = 0;
@@ -820,7 +940,7 @@ int fts_read_project_code(struct i2c_client * client, char * pProjectCode) {
 			&& reg_val[1] == upgradeinfo.upgrade_id_2) {
 			//dev_dbg(&client->dev, "[FTS] Step 3: CTPM ID,ID1 = 0x%x,ID2 = 0x%x\n",
 				//reg_val[0], reg_val[1]);
-			DBG("[FTS] Step 3: CTPM ID,ID1 = 0x%x,ID2 = 0x%x\n",reg_val[0], reg_val[1]);
+			pr_err("[FTS] Step 3: CTPM ID,ID1 = 0x%x,ID2 = 0x%x\n",reg_val[0], reg_val[1]);
 			break;
 		} else {
 			dev_err(&client->dev, "[FTS] Step 3: CTPM ID,ID1 = 0x%x,ID2 = 0x%x\n",reg_val[0], reg_val[1]);
@@ -840,7 +960,7 @@ int fts_read_project_code(struct i2c_client * client, char * pProjectCode) {
 		else if(reg_val[0] >= 0x0f)
 			is_5336_new_bootloader = BL_VERSION_GZF ;
 	}
-	DBG("bootloader version:%d\n", reg_val[0]);
+	pr_err("bootloader version:%d\n", reg_val[0]);
 
 	/*read project code*/
 	packet_buf[0] = 0x03;
@@ -859,47 +979,17 @@ int fts_read_project_code(struct i2c_client * client, char * pProjectCode) {
 		if (*(pProjectCode+j) == '\0')
 			break;
 	}
-	DBG("project code = %s \n", pProjectCode);
+	pr_err("project code = %s \n", pProjectCode);
 
 
 	printk(KERN_INFO"[FTS] Step 7: reset the new FW\n");
 	/*********Step 7: reset the new FW***********************/
-	DBG("Step 7: reset the new FW\n");
+	pr_err("Step 7: reset the new FW\n");
 	auc_i2c_write_buf[0] = 0x07;
 	fts_i2c_Write(client, auc_i2c_write_buf, 1);
 	msleep(300);	/*make sure CTP startup normally */
 
 	return pProjectCode[0];
-}
-
-/*Added by jiao.shp for tp firmware update in 2014.10.28 START*/
-int HidI2c_To_StdI2c(struct i2c_client * client)
-{
-	u8 auc_i2c_write_buf[10] = {0};
-	u8 reg_val[10] = {0};
-	int iRet = 0;
-
-	auc_i2c_write_buf[0] = 0xEB;
-	auc_i2c_write_buf[1] = 0xAA;
-	auc_i2c_write_buf[2] = 0x09;
-    iRet = fts_i2c_Write(client, auc_i2c_write_buf, 3);
-    reg_val[0] = reg_val[1] =  reg_val[2] = 0x00;
-	msleep(10);    
-	iRet = fts_i2c_Read(client, auc_i2c_write_buf, 0, reg_val, 3);
-	pr_info("Change to STDI2cValue,REG1 = 0x%x,REG2 = 0x%x,REG3 = 0x%x, iRet=%d\n",
-					reg_val[0], reg_val[1], reg_val[2], iRet);
-	if (reg_val[0] == 0xEB && reg_val[1] == 0xAA && reg_val[2] == 0x08) 
-	{
-		pr_info("HidI2c_To_StdI2c is successful.\n");
-		iRet = 1;
-	}
-	else
-	{
-		pr_err("HidI2c_To_StdI2c is error.\n");
-		iRet = 0;
-	}
-
-	return iRet;
 }
 
 int  fts5x46_ctpm_fw_upgrade(struct i2c_client * client, u8* pbt_buf, u32 dw_lenth)
@@ -1821,7 +1911,7 @@ static ssize_t fts_ftsgetprojectcode_show(struct device *dev,
 
 	memset(projectcode, 0, sizeof(projectcode));
 	mutex_lock(&g_device_mutex);
-	if(fts_read_project_code(client, projectcode) < 0)
+	if(fts_ctpm_fw_upgrade_ReadVendorID(client, projectcode) < 0)
 		num_read_chars = snprintf(buf, PAGE_SIZE, "get projcet code fail!\n");
 	else
 		num_read_chars = snprintf(buf, PAGE_SIZE, "projcet code = %s\n", projectcode);

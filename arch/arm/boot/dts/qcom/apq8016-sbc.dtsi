@@ -156,7 +156,7 @@
 		qcom,model = "msm8x16-snd-card-sbc";
 		qcom,msm-snd-card-id = <0>;
 		qcom,msm-codec-type = "internal";
-		qcom,msm-ext-pa = "primary";
+		qcom,msm-ext-pa = "quaternary";
 		qcom,msm-mclk-freq = <9600000>;
 		qcom,msm-mbhc-hphl-swh = <0>;
 		qcom,msm-mbhc-gnd-swh = <0>;
@@ -181,7 +181,9 @@
 				"cdc_lines_sec_ext_act",
 				"cdc_lines_sec_ext_sus",
 				"cross_conn_det_act",
-				"cross_conn_det_sus";
+				"cross_conn_det_sus",
+				"cdc_lines_quat_ext_act",
+				"cdc_lines_quat_ext_sus";
 		pinctrl-0 = <&cdc_pdm_lines_act>;
 		pinctrl-1 = <&cdc_pdm_lines_sus>;
 		pinctrl-2 = <&cdc_pdm_lines_act &cdc_ext_pa_act
@@ -190,6 +192,10 @@
 						&cdc_ext_pa_ws_sus>;
 		pinctrl-4 = <&cross_conn_det_act>;
 		pinctrl-5 = <&cross_conn_det_sus>;
+		pinctrl-6 = <&ext_cdc_tlmm_lines_act &cdc_pdm_lines_act
+						&cross_conn_det_act>;
+		pinctrl-7 = <&ext_cdc_tlmm_lines_sus &cdc_pdm_lines_sus
+						&cross_conn_det_sus>;
 
 		asoc-platform = <&pcm0>, <&pcm1>, <&voip>, <&voice>,
 				<&loopback>, <&compress>, <&hostless>,
@@ -776,7 +782,7 @@
 				qcom,default-state = "off";
 				qcom,source-sel = <1>;
 				qcom,mode-ctrl = <0x10>;
-				qcom,vin-ctrl = <0x02>;
+				qcom,vin-ctrl = <0x03>;
 			};
 		};
 		qcom,leds@c100  {
@@ -793,7 +799,12 @@
 				qcom,default-state = "on";
 				qcom,source-sel = <1>;
 				qcom,mode-ctrl = <0x10>;
-				qcom,vin-ctrl = <0x02>;
+				qcom,vin-ctrl = <0x03>;
+			};
+		};
+		pm8916_pon: qcom,power-on@800 {
+			qcom,pon_1 {
+				qcom,s2-type = <7>;
 			};
 		};
 	};
@@ -851,10 +862,27 @@
 				qcom,max-current = <40>;
 				qcom,id = <6>;
 				qcom,source-sel = <1>;
-				qcom,mode-ctrl = <0x60>;
+				qcom,mode-ctrl = <0x10>;
 				qcom,mode = "manual";
 				linux,default-trigger =
 					"wlan-indication-led";
+			};
+		};
+
+		qcom,leds@a200 { /* BT LED */
+		compatible = "qcom,leds-qpnp";
+		reg = <0xa200 0x100>;
+		status = "okay";
+			qcom,led_mpp_3 {
+				label = "mpp";
+				linux,name = "bt";
+				qcom,max-current = <40>;
+				qcom,id = <6>;
+				qcom,source-sel = <1>;
+				qcom,mode-ctrl = <0x10>;
+				qcom,mode = "manual";
+				linux,default-trigger =
+					"bt-indication-led";
 			};
 		};
 	};

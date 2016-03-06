@@ -357,8 +357,10 @@
 		compatible = "ehang,watchdog-pin";
 		pinctrl-names = "default";
 		pinctrl-0 = <&obc_watchdog_pin>;		
-		ehang,toggle-pin = <&msm_gpio 91 0>;
-		//ehang,suspend-state-pin = <&msm_gpio 91 0>;
+		ehang,toggle-pin = <&msm_gpio 2 0>;
+		ehang,suspend-state-pin = <&msm_gpio 91 0>;
+		ehang,port-det-pin = <&msm_gpio 69 0>;
+		ehang,usb-switch-pin = <&msm_gpio 15 0>;
 		ehang,high-delay=<1000>;
 		ehang,low-delay=<5000>;
 	};
@@ -586,6 +588,7 @@
 
 #include "dsi-panel-lead-otm1284-cpt-720p-video.dtsi"
 #include "dsi-panel-h8394d-txd-innolux5p5-hd-video.dtsi"
+#include "dsi-panel-h8394f-jd-auo5p5-hd-video.dtsi"
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
@@ -609,6 +612,10 @@
       qcom,cont-splash-enabled;
 };
 
+&dsi_h8394f_jd_auo5p5_hd_vid {
+      qcom,cont-splash-enabled;
+};
+
 &dsi_lead_otm1284_720p_cpt_vid {
        qcom,cont-splash-enabled;
 };
@@ -624,7 +631,10 @@
 &pm8916_chg {
 	status = "ok";
 	// by skj
-	// qcom,use-external-charger;
+	qcom,vddmax-mv = <4350>;
+	qcom,vddsafe-mv = <4350>;
+	qcom,cool-bat-mv = <4200>;
+	qcom,warm-bat-mv = <4200>;	
 };
 
 / {
@@ -632,7 +642,7 @@
 		qcom,rpull-up-kohm = <100>;
 		qcom,vref-batt-therm = <1800000>;
 
-		#include "batterydata-palladium-5500.dtsi"
+		#include "batterydata-palladium-2000.dtsi"
 	};
 };
 
