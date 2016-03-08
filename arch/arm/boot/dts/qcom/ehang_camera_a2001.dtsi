@@ -914,9 +914,9 @@
 		qcom,slave-addr = <0x20>; //change by shengweiguang from 0x6c to 0x20
 		qcom,cci-master = <0>;
 		qcom,num-blocks = <5>;
-		qcom,page0 = <1 0x0100 2 0x01 1 1>;
-		qcom,poll0 = <0 0x0 2 0 1 1>;
-		qcom,mem0 = <0 0x0 2 0 1 0>;
+		qcom,page0 = <1 0x0100 2 0x01 1 1>; //number page size, address, atype, data, dtype, delay
+		qcom,poll0 = <0 0x0 2 0 1 1>; //number poll size, reg address, atype, data, dtype, delay
+		qcom,mem0 = <0 0x0 2 0 1 0>; //number memory size, address, atype, data, dtype, delay
 		qcom,page1 = <1 0x5002 2 0x02 1 1>;
 		qcom,poll1 = <0 0x0 2 0 1 1>;
 		qcom,mem1 = <0 0x0 2 0 1 0>;
@@ -1021,16 +1021,16 @@
 			<&msm_gpio 78 0>;			//afvdd 	
 		qcom,gpio-reset = <1>;
 		qcom,gpio-standby = <2>;
-		qcom,gpio-cameraid = <3>;
+		qcom,gpio-custom1 = <3>;
 		qcom,gpio-vana = <4>;
 		qcom,gpio-vdig=<5>;
 		qcom,gpio-vaf=<6>;		
 		qcom,gpio-req-tbl-num = <0 1 2 3 4 5 6>;
-		qcom,gpio-req-tbl-flags = <1 0 0 1 0 0 0>;
+		qcom,gpio-req-tbl-flags = <1 0 0 0 0 0 0>;
 		qcom,gpio-req-tbl-label = "CAMIF_MCLK",
 			                  "CAM_RESET1",
 			                  "CAM_STANDBY",
-			                  "CAM_ID",
+			                  "CAM_CUSTOM1",
 			                  "CAM_VANA",
 			                  "CAM_VDIG",
 			                  "CAM_VAF";

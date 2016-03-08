@@ -31,7 +31,7 @@ static struct msm_actuator msm_piezo_actuator_table;
 static struct msm_actuator msm_hvcm_actuator_table;
 
 /* add by shengweiguang begin */
-#ifdef CONFIG_PRODUCT_A2001
+#ifdef CONFIG_PRODUCT_DARLING_OIS_ACTUATOR
 struct msm_camera_i2c_client *ehang_actuator_camera_i2c_client;
 #endif 
 /* add by shengweiguang end */
@@ -612,10 +612,11 @@ static int32_t msm_actuator_set_param(struct msm_actuator_ctrl_t *a_ctrl,
 	int32_t rc = -EFAULT;
 	uint16_t i = 0;
 	struct msm_camera_cci_client *cci_client = NULL;
-#ifdef CONFIG_PRODUCT_A2001
+#ifdef CONFIG_PRODUCT_DARLING_OIS_ACTUATOR
 	uint8_t data_ois[8]={0x3,0,0,0,0,0,0,0}; // add by shengweiguang for ois mode set
+	ehang_actuator_camera_i2c_client = NULL;
 #endif
-	CDBG("Enter\n");
+	CDBG("Enter\n"); 
 
 	for (i = 0; i < ARRAY_SIZE(actuators); i++) {
 		if (set_info->actuator_params.act_type ==
@@ -624,7 +625,21 @@ static int32_t msm_actuator_set_param(struct msm_actuator_ctrl_t *a_ctrl,
 			rc = 0;
 		}
 	}
-
+	
+/* add by shengweiguang for darling ois actuators begin */
+#ifdef CONFIG_PRODUCT_DARLING_OIS_ACTUATOR
+   pr_err("SWGX : actuator i2c_addr = %d \n", set_info->actuator_params.i2c_addr);
+   if (set_info->actuator_params.i2c_addr == 0x32)
+   {
+	   a_ctrl->i2c_client.i2c_func_tbl->i2c_write_table_w_microdelay =
+		msm_camera_cci_i2c_write_ois_actuator_w_microdelay;
+		
+		ehang_actuator_camera_i2c_client = &a_ctrl->i2c_client;
+		pr_err("SWGX : detect ois actuator !!!\n");
+   }
+#endif
+/* add by shengweiguang for darling ois actuator end */	
+	
 	if (rc < 0) {
 		pr_err("Actuator function table not found\n");
 		return rc;
@@ -731,9 +746,25 @@ static int32_t msm_actuator_set_param(struct msm_actuator_ctrl_t *a_ctrl,
 			}
 		}
 	}
-#ifdef CONFIG_PRODUCT_A2001
+#ifdef CONFIG_PRODUCT_DARLING_OIS_ACTUATOR
+
 	if (set_info->actuator_params.i2c_addr == 0x32)
 	{
+	
+	{
+		//uint8_t data_pwm[8]={0x08,0x01,0x01,0x01,0x40,0,0,0};
+		uint8_t data_pwm[8]={0x08,0x01,0x01,0x01,0x40,0,0,0};
+		rc = msm_camera_cci_i2c_write_seq(&a_ctrl->i2c_client,0x20, &data_pwm[0], 8);
+		if (rc < 0)
+		{
+			pr_info("SWGX : set PWM setting failed !!!!!!!!!!!!\n");
+		}
+		else
+		{
+			pr_info("SWGX : set PWM setting success !!!!!!!!!!!!\n");
+		}
+	}
+	
 		rc = msm_camera_cci_i2c_write_seq(&a_ctrl->i2c_client,0x01, &data_ois[0], 8);
 		if (rc < 0)
 		{
@@ -759,8 +790,9 @@ static int32_t msm_actuator_set_param(struct msm_actuator_ctrl_t *a_ctrl,
 	}
 	else
 	{
-		pr_info("SWG4 : Do not set OIS mode for this ACTUATOR i2c address!!!!!!!!!!!!\n");
+		pr_info("SWGX : not darling OIS ACTUATOR i2c address!!!!!!!!!!!!\n");
 	}
+
 #endif
 	/* Park lens data */
 	a_ctrl->park_lens = set_info->actuator_params.park_lens;
@@ -815,6 +847,7 @@ static int32_t msm_actuator_config(struct msm_actuator_ctrl_t *a_ctrl,
 		break;
 
 	case CFG_SET_ACTUATOR_INFO:
+		pr_err("SWGA : CFG_SET_ACTUATOR_INFO  *-*-*-*-*-* \n");
 		rc = msm_actuator_set_param(a_ctrl, &cdata->cfg.set_info);
 		if (rc < 0)
 			pr_err("init table failed %d\n", rc);
@@ -885,13 +918,8 @@ static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl = {
 	.i2c_write = msm_camera_cci_i2c_write,
 	.i2c_write_table = msm_camera_cci_i2c_write_table,
 	.i2c_write_seq_table = msm_camera_cci_i2c_write_seq_table,
-	#ifdef CONFIG_PRODUCT_A2001
-	.i2c_write_table_w_microdelay =
-		msm_camera_cci_i2c_write_ois_actuator_w_microdelay,
-	#else
 	.i2c_write_table_w_microdelay =
 		msm_camera_cci_i2c_write_table_w_microdelay,
-	#endif
 	.i2c_util = msm_sensor_cci_i2c_util,
 	.i2c_poll =  msm_camera_cci_i2c_poll,
 };
@@ -1314,12 +1342,6 @@ static int32_t msm_actuator_platform_probe(struct platform_device *pdev)
 	cci_client = msm_actuator_t->i2c_client.cci_client;
 	cci_client->cci_subdev = msm_cci_get_subdev();
 	cci_client->cci_i2c_master = MASTER_MAX;
-	
-/* add by shengweiguang begin */
-#ifdef CONFIG_PRODUCT_A2001
-	ehang_actuator_camera_i2c_client = &msm_actuator_t->i2c_client;
-#endif
-/* add by shengweiguang end */
 
 	v4l2_subdev_init(&msm_actuator_t->msm_sd.sd,
 		msm_actuator_t->act_v4l2_subdev_ops);

@@ -186,7 +186,7 @@
 		};
 		
 		watchdog_pin_active {
-			qcom,pins = <&gp 91>;
+			qcom,pins = <&gp 2>;
 			qcom,num-grp-pins = <1>;
 			qcom,pin-func = <0>;
 		        label = "watchdog_pin_active";

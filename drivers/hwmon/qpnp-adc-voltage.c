@@ -176,6 +176,7 @@ static struct qpnp_vadc_scale_fn vadc_scale_fn[] = {
 	[SCALE_QRD_SKUL_BATT_THERM] = {qpnp_adc_scale_qrd_skul_batt_therm},
 		// by skj
 	[SCALE_QRD_SMB135X_BATT_THERM] = {qpnp_adc_scale_smb135x_batt_therm},
+	[SCALE_QRD_A8_BATT_THERM] = {qpnp_adc_scale_a8_batt_therm},
 };
 
 static struct qpnp_vadc_rscale_fn adc_vadc_rscale_fn[] = {

@@ -31,7 +31,7 @@
 		qcom,mdss-dsi-h-pulse-width = <4>;
 		qcom,mdss-dsi-h-sync-skew = <0>;
 		qcom,mdss-dsi-v-back-porch = <2>;
-		qcom,mdss-dsi-v-front-porch = <3>;
+		qcom,mdss-dsi-v-front-porch = <18>;
 		qcom,mdss-dsi-v-pulse-width = <2>;
 		qcom,mdss-dsi-h-left-border = <0>;
 		qcom,mdss-dsi-h-right-border = <0>;
@@ -538,8 +538,8 @@
 29 01 00 00 00 00 02 51 00
 29 01 00 00 00 00 02 53 2c
 29 01 00 00 00 00 02 55 01
-29 01 00 00 C8 00 02 11 00
-29 01 00 00 78 00 02 29 00
+29 01 00 00 96 00 02 11 00
+29 01 00 00 32 00 02 29 00
 ];
 		qcom,mdss-dsi-off-command = [05 01 00 00 32 00 02 28 00
 					05 01 00 00 78 00 02 10 00];
@@ -562,9 +562,6 @@
 		qcom,mdss-dsi-mdp-trigger = <0>;
 		qcom,mdss-pan-bl-levels = <1 255>;
 		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
-		//qcom,mdss-dsi-bl-pmic-bank-select = <0>;
-		//qcom,mdss-dsi-bl-pmic-pwm-frequency = <270>; 
-	//	qcom,mdss-dsi-pwm-gpio = <&pm8916_mpps 4 0>;
-		qcom,mdss-dsi-reset-sequence = <1 50>, <0 50>, <1 120>;
+		qcom,mdss-dsi-reset-sequence = <1 20>, <0 20>, <1 30>;
 	};
 };
