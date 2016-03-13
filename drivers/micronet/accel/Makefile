@@ -3,3 +3,4 @@
 #
 
 obj-y                  += vaccel.o
+obj-y			+= virtual_gpio.o
