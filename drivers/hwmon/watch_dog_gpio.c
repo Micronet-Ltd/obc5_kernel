@@ -23,17 +23,46 @@
 #include <linux/of_gpio.h>
 #include <linux/spinlock.h>
 #include <linux/pinctrl/consumer.h>
-
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 struct watch_dog_pin_info{
 	int toggle_pin;
 	int suspend_state_pin;
 	int port_det_pin;
-	int usb_switch_pin;
+	int usb_switch_pin;	
 	int high_delay;
 	int low_delay;
 	struct delayed_work	toggle_work;
 	int state; // high=1 low=0
+};
+
+int rf_kill_pin=(-1);
+
+ssize_t rfkillpin_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
+{
+
+	if(size>=1 && 0==*ppos){
+		if(gpio_is_valid(rf_kill_pin)){
+			if(0==gpio_get_value(rf_kill_pin))
+				buf[0]='0';	
+			else
+				buf[0]='1';	
+		}else
+			buf[0]='e';	
+		if(size>=2){
+			buf[1]='\n';
+			*ppos=*ppos+2;
+			return 2;
+		}
+		*ppos=*ppos+1;
+		return 1;
+	}
+	return 0;
+}
+
+static const struct file_operations proc_rfkill_operations = {
+	.read		= rfkillpin_read,
 };
 
 static void watchdog_toggle_work(struct work_struct *work)
@@ -133,7 +162,9 @@ static int watchdog_pin_probe(struct platform_device *op)
 				irq, rc);
 		}	
 	}	
-		
+
+	rf_kill_pin=of_get_named_gpio(np,"ehang,rf-kill-pin",0);
+	
 	rc = of_property_read_u32(np, "ehang,high-delay",
 						&inf->high_delay);
 
@@ -154,6 +185,7 @@ static int watchdog_pin_probe(struct platform_device *op)
 		msecs_to_jiffies(inf->low_delay));	
 	inf->state=1;
 
+	proc_create("rfkillpin", S_IRUSR | S_IRGRP | S_IROTH, NULL, &proc_rfkill_operations);
 	return 0;
 }
 
