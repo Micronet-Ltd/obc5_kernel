@@ -1180,7 +1180,7 @@
 		};
 
 		tlmm_gpio_key {
-			qcom,pins = <&gp 107>, <&gp 108>, <&gp 109>;
+			qcom,pins = <&gp 109>, <&gp 107>, <&gp 112>;
 			qcom,pin-func = <0>;
 			qcom,num-grp-pins = <3>;
 			label = "tlmm_gpio_key";
