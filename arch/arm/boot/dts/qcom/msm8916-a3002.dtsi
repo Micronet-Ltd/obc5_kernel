@@ -438,6 +438,10 @@
 		qcom,ext-spk-amp-gpio = <&msm_gpio 16 0>;
 		qcom,hp-spk-switch-gpio = <&msm_gpio 114 0>;
 	};
+	virtual_leds {
+		compatible = "virtual-leds";
+		status = "okay";
+	};
 };
 
 /* add by shengweiguang for usb gadget 20150817 begin */
@@ -493,7 +497,7 @@
 			linux,code = <61>;
 			gpio-key,wakeup;
 			debounce-interval = <15>;
-		};			
+		};
 	};
 };
 
