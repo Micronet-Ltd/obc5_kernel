@@ -20,16 +20,18 @@
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
 #include <linux/file.h>
+#include <linux/mutex.h>
+#include <linux/poll.h>
 #include <asm/uaccess.h>
 
 struct vled_data {
     struct device           dev;
-    struct led_classdev     cdev_r;
-    struct led_classdev     cdev_g;
-    struct led_classdev     cdev_b;
+    struct led_classdev     cdev_0;
+    struct led_classdev     cdev_1;
     struct miscdevice       mdev;
     unsigned long open;
-    unsigned int r,g,b;
+    unsigned int c, prev_led0, prev_led1;
+    struct mutex vled_lock;
 };
 
 static int vleds_open(struct inode *inode, struct file *file)
@@ -55,41 +57,57 @@ static int vleds_release(struct inode *inode, struct file *file)
 
 static ssize_t vleds_read(struct file * file, char __user * buf, size_t count, loff_t *ppos)
 {
+    int i;
     struct miscdevice *miscdev =  file->private_data;
     struct vled_data *vleds = container_of(miscdev, struct vled_data, mdev);
 
 	uint8_t output[16];
 
-	if(count < sizeof(output)) {
+    if (0 == vleds->open) {
+        return -EINVAL;
+    }
+
+    if (count < sizeof(output)) {
 		printk("%s: buffer too small\n", __func__);
 		return -EINVAL;
 	}
 
     // Vladimir:
-    // The MCU LEDs have 8 colores only but led class operates by brightness and not relates to color
-    // Here is simple conversion brightness to 8 color 3:3:2
+    // The MCU LEDs have 8 colores only by static PMGD780SN control or full color by switchable PMGD780SN control
+    // but led class operates by brightness and not relates to color. Here is simple conversion brightness to color
+    // Using:
+    // echo llrrggbb > /sys/class/leds/vled[n]/brightness
+    //      | | | |                        |
+    //      [-8-bit every field]        led number
+    //  ll is brightness
+    //
     output[0] = 0;
-    output[1] = vleds->r;
-    output[2] = vleds->r & 0xE0;        // r
-    output[3] = (vleds->r & 0x1C) << 3; // g
-    output[4] = (vleds->r & 0x3) << 6;  // b
+    output[1] = (uint8_t)((vleds->cdev_0.brightness & 0x7F000000) >> 24);  // brightness
+    output[2] = (uint8_t)((vleds->cdev_0.brightness & 0xFF0000) >> 16);    // r
+    output[3] = (uint8_t)((vleds->cdev_0.brightness & 0xFF00) >> 8);       // g
+    output[4] = (uint8_t)(vleds->cdev_0.brightness & 0xFF);              // b
     output[5] = 1;
-    output[6] = vleds->g;
-    output[7] = vleds->g & 0xE0;        // r
-    output[8] = (vleds->g & 0x1C) << 3; // g
-    output[9] = (vleds->g & 0x3) << 6;  // b
-    output[10] = 2;
-    output[11] = vleds->b;
-    output[12] = vleds->b & 0xE0;        // r
-    output[13] = (vleds->b & 0x1C) << 3; // g
-    output[14] = (vleds->b & 0x3) << 6;  // b
-    output[15] = 0;
+    output[6] = (uint8_t)((vleds->cdev_1.brightness & 0x7F000000) >> 24);  // brightness
+    output[7] = (uint8_t)((vleds->cdev_1.brightness & 0xFF0000) >> 16);    // r
+    output[8] = (uint8_t)((vleds->cdev_1.brightness & 0xFF00) >> 8);       // g
+    output[9] = (uint8_t)(vleds->cdev_1.brightness & 0xFF);              // b
+
+    printk("%s: out data\n", __func__);
+    for (i = 0; i < sizeof(output); i++) {
+        printk("%X ", output[i]);
+    }
+    printk("\n");
+
+    mutex_lock(&vleds->vled_lock); 
+    output[15] = vleds->c;
+    vleds->c = -1;
+    mutex_unlock(&vleds->vled_lock);
 
     if(copy_to_user(buf, output, sizeof(output)))
         return -EINVAL;
     *ppos = 0;
 
-    printk("%s: succeed\n", __func__);
+//    printk("%s: succeed\n", __func__);
 
     return 0;
 }
@@ -101,6 +119,21 @@ static ssize_t vleds_write(struct file * file, const char __user * buf, size_t c
 	return 0;
 }
 
+static unsigned int vleds_poll(struct file * file,  poll_table * wait)
+{
+    struct miscdevice *miscdev =  file->private_data;
+    struct vled_data *vleds = container_of(miscdev, struct vled_data, mdev);
+	unsigned int mask = 0;
+
+    mutex_lock(&vleds->vled_lock);
+//	poll_wait(file, &vleds->waitq, wait);
+	if(-1 != vleds->c)
+		mask |= POLLIN | POLLRDNORM;
+    mutex_unlock(&vleds->vled_lock);
+
+	return mask;
+}
+
 static const struct file_operations vleds_dev_fops = {
 	.owner      = THIS_MODULE,
 	.llseek     = no_llseek,
@@ -108,30 +141,38 @@ static const struct file_operations vleds_dev_fops = {
 	.write      = vleds_write,
 	.open       = vleds_open,
 	.release    = vleds_release,
-//	.poll       = vleds_poll,
+	.poll       = vleds_poll,
 };
 
 static void vled_set(struct led_classdev *led_cdev, enum led_brightness value)
 {
+    unsigned int l, *prev;
     struct vled_data * vleds;
 
+    printk("%s: %X\n", __func__, value);
+
     if (0 == strncmp(led_cdev->name, "vled0", strlen("vled0"))) {
-        vleds = container_of(led_cdev, struct vled_data, cdev_r);
-        vleds->r = (int)value;
-    } else if (0 == strncmp(led_cdev->name, "vled1", strlen("vled1"))) {
-        vleds = container_of(led_cdev, struct vled_data, cdev_g);
-        vleds->g = (int)value;
-    } else if (0 == strncmp(led_cdev->name, "vled2", strlen("vled2"))) {
-        vleds = container_of(led_cdev, struct vled_data, cdev_b);
-        vleds->b = (int)value;
+        vleds = container_of(led_cdev, struct vled_data, cdev_0);
+        prev = &vleds->prev_led0;
+        l = 0;
+    } else /*if (0 == strncmp(led_cdev->name, "vled1", strlen("vled1")))*/ {
+        vleds = container_of(led_cdev, struct vled_data, cdev_1);
+        prev = &vleds->prev_led1;
+        l = 1;
     }
+
+    mutex_lock(&vleds->vled_lock);
+    if (*prev != value) {
+        *prev = (int)value;
+        vleds->c = l;
+    }
+    mutex_unlock(&vleds->vled_lock);
 }
 
 static void vled_delete(struct vled_data *led)
 {
-    led_classdev_unregister(&led->cdev_r);
-    led_classdev_unregister(&led->cdev_g);
-    led_classdev_unregister(&led->cdev_b);
+    led_classdev_unregister(&led->cdev_0);
+    led_classdev_unregister(&led->cdev_1);
 
     misc_deregister(&led->mdev);
 }
@@ -146,48 +187,36 @@ static struct vled_data *vled_create_of(struct platform_device *pdev)
 	if (!led)
 		return ERR_PTR(-ENOMEM);
 
-    led->cdev_r.name = "vled0";
-    led->cdev_r.default_trigger = "none";
-    led->cdev_r.brightness_set = vled_set;
-    led->cdev_r.brightness = LED_OFF;
-    led->cdev_r.flags |= LED_CORE_SUSPENDRESUME;
+    led->prev_led0 = led->prev_led1 = led->c = -1;
+    mutex_init(&led->vled_lock);
+    led->cdev_0.name = "vled0";
+    led->cdev_0.default_trigger = "none";
+    led->cdev_0.brightness_set = vled_set;
+    led->cdev_0.brightness = LED_OFF;
+    led->cdev_0.max_brightness = 0x7FFFFFFF;
+    led->cdev_0.flags |= LED_CORE_SUSPENDRESUME;
 
-    printk("%s: register %s\n", __func__, led->cdev_r.name);
+    printk("%s: register %s\n", __func__, led->cdev_0.name);
 
-    err = led_classdev_register(pdev->dev.parent, &led->cdev_r);
+    err = led_classdev_register(pdev->dev.parent, &led->cdev_0);
     if (err < 0) {
         kfree(led);
         return ERR_PTR(err);
     }
 
-    led->cdev_g.name = "vled1";
-    led->cdev_g.default_trigger = "none";
-    led->cdev_g.brightness_set = vled_set;
-    led->cdev_g.brightness = LED_OFF;
-    led->cdev_g.flags |= LED_CORE_SUSPENDRESUME;
+    led->cdev_1.name = "vled1";
+    led->cdev_1.default_trigger = "none";
+    led->cdev_1.brightness_set = vled_set;
+    led->cdev_1.brightness = LED_OFF;
+    led->cdev_1.max_brightness = 0x7FFFFFFF;
+    led->cdev_1.flags |= LED_CORE_SUSPENDRESUME;
 
 
-    printk("%s: register %s\n", __func__, led->cdev_g.name);
+    printk("%s: register %s\n", __func__, led->cdev_1.name);
 
-    err = led_classdev_register(pdev->dev.parent, &led->cdev_g);
+    err = led_classdev_register(pdev->dev.parent, &led->cdev_1);
     if (err < 0) {
-        led_classdev_unregister(&led->cdev_r);
-        kfree(led);
-        return ERR_PTR(err);
-    }
-
-    led->cdev_b.name = "vled2";
-    led->cdev_b.default_trigger = "none";
-    led->cdev_b.brightness_set = vled_set;
-    led->cdev_b.brightness = LED_OFF;
-    led->cdev_b.flags |= LED_CORE_SUSPENDRESUME;
-
-    printk("%s: register %s\n", __func__, led->cdev_b.name);
-
-    err = led_classdev_register(pdev->dev.parent, &led->cdev_b);
-    if (err < 0) {
-        led_classdev_unregister(&led->cdev_r);
-        led_classdev_unregister(&led->cdev_b);
+        led_classdev_unregister(&led->cdev_1);
         kfree(led);
         return ERR_PTR(err);
     }
@@ -200,9 +229,8 @@ static struct vled_data *vled_create_of(struct platform_device *pdev)
 
     err = misc_register(&led->mdev);
     if(err) {
-        led_classdev_unregister(&led->cdev_r);
-        led_classdev_unregister(&led->cdev_g);
-        led_classdev_unregister(&led->cdev_b);
+        led_classdev_unregister(&led->cdev_1);
+        led_classdev_unregister(&led->cdev_1);
         kfree(led);
         printk("%s: failure to register misc device \n", __func__);
         return ERR_PTR(err);
