@@ -57,7 +57,7 @@ static int vleds_release(struct inode *inode, struct file *file)
 
 static ssize_t vleds_read(struct file * file, char __user * buf, size_t count, loff_t *ppos)
 {
-    int i;
+//    int i;
     struct miscdevice *miscdev =  file->private_data;
     struct vled_data *vleds = container_of(miscdev, struct vled_data, mdev);
 
@@ -92,11 +92,13 @@ static ssize_t vleds_read(struct file * file, char __user * buf, size_t count, l
     output[8] = (uint8_t)((vleds->cdev_1.brightness & 0xFF00) >> 8);       // g
     output[9] = (uint8_t)(vleds->cdev_1.brightness & 0xFF);              // b
 
+#if 0
     printk("%s: out data\n", __func__);
     for (i = 0; i < sizeof(output); i++) {
         printk("%X ", output[i]);
     }
     printk("\n");
+#endif
 
     mutex_lock(&vleds->vled_lock); 
     output[15] = vleds->c;
@@ -149,7 +151,7 @@ static void vled_set(struct led_classdev *led_cdev, enum led_brightness value)
     unsigned int l, *prev;
     struct vled_data * vleds;
 
-    printk("%s: %X\n", __func__, value);
+//    printk("%s: %X\n", __func__, value);
 
     if (0 == strncmp(led_cdev->name, "vled0", strlen("vled0"))) {
         vleds = container_of(led_cdev, struct vled_data, cdev_0);
@@ -196,7 +198,7 @@ static struct vled_data *vled_create_of(struct platform_device *pdev)
     led->cdev_0.max_brightness = 0x7FFFFFFF;
     led->cdev_0.flags |= LED_CORE_SUSPENDRESUME;
 
-    printk("%s: register %s\n", __func__, led->cdev_0.name);
+//    printk("%s: register %s\n", __func__, led->cdev_0.name);
 
     err = led_classdev_register(pdev->dev.parent, &led->cdev_0);
     if (err < 0) {
@@ -212,7 +214,7 @@ static struct vled_data *vled_create_of(struct platform_device *pdev)
     led->cdev_1.flags |= LED_CORE_SUSPENDRESUME;
 
 
-    printk("%s: register %s\n", __func__, led->cdev_1.name);
+//    printk("%s: register %s\n", __func__, led->cdev_1.name);
 
     err = led_classdev_register(pdev->dev.parent, &led->cdev_1);
     if (err < 0) {
@@ -225,7 +227,7 @@ static struct vled_data *vled_create_of(struct platform_device *pdev)
     led->mdev.name	= "vleds";
     led->mdev.fops	= &vleds_dev_fops;
 
-    printk("%s: register %s\n", __func__, led->mdev.name);
+//    printk("%s: register %s\n", __func__, led->mdev.name);
 
     err = misc_register(&led->mdev);
     if(err) {
