@@ -22,6 +22,7 @@
 #include <linux/file.h>
 #include <linux/mutex.h>
 #include <linux/poll.h>
+#include <linux/spinlock.h>
 #include <asm/uaccess.h>
 
 struct vled_data {
@@ -31,7 +32,8 @@ struct vled_data {
     struct miscdevice       mdev;
     unsigned long open;
     unsigned int c, prev_led0, prev_led1;
-    struct mutex vled_lock;
+    spinlock_t vled_lock;
+    unsigned long lock_flags;
 };
 
 static int vleds_open(struct inode *inode, struct file *file)
@@ -100,10 +102,10 @@ static ssize_t vleds_read(struct file * file, char __user * buf, size_t count, l
     printk("\n");
 #endif
 
-    mutex_lock(&vleds->vled_lock); 
     output[15] = vleds->c;
-    vleds->c = -1;
-    mutex_unlock(&vleds->vled_lock);
+    spin_lock_irqsave(&vleds->vled_lock, vleds->lock_flags);
+    vleds->c = 0;
+    spin_unlock_irqrestore(&vleds->vled_lock, vleds->lock_flags);
 
     if(copy_to_user(buf, output, sizeof(output)))
         return -EINVAL;
@@ -127,11 +129,11 @@ static unsigned int vleds_poll(struct file * file,  poll_table * wait)
     struct vled_data *vleds = container_of(miscdev, struct vled_data, mdev);
 	unsigned int mask = 0;
 
-    mutex_lock(&vleds->vled_lock);
+    spin_lock_irqsave(&vleds->vled_lock, vleds->lock_flags);
 //	poll_wait(file, &vleds->waitq, wait);
-	if(-1 != vleds->c)
+	if(0 != vleds->c)
 		mask |= POLLIN | POLLRDNORM;
-    mutex_unlock(&vleds->vled_lock);
+    spin_unlock_irqrestore(&vleds->vled_lock, vleds->lock_flags);
 
 	return mask;
 }
@@ -163,12 +165,12 @@ static void vled_set(struct led_classdev *led_cdev, enum led_brightness value)
         l = 1;
     }
 
-    mutex_lock(&vleds->vled_lock);
+    spin_lock_irqsave(&vleds->vled_lock, vleds->lock_flags);
     if (*prev != value) {
         *prev = (int)value;
-        vleds->c = l;
+        vleds->c |= (1 << l);
     }
-    mutex_unlock(&vleds->vled_lock);
+    spin_unlock_irqrestore(&vleds->vled_lock, vleds->lock_flags);
 }
 
 static void vled_delete(struct vled_data *led)
@@ -189,8 +191,9 @@ static struct vled_data *vled_create_of(struct platform_device *pdev)
 	if (!led)
 		return ERR_PTR(-ENOMEM);
 
-    led->prev_led0 = led->prev_led1 = led->c = -1;
-    mutex_init(&led->vled_lock);
+    led->prev_led0 = led->prev_led1 = -1;
+    led->c = 0;
+    spin_lock_init(&led->vled_lock);
     led->cdev_0.name = "vled0";
     led->cdev_0.default_trigger = "none";
     led->cdev_0.brightness_set = vled_set;
