@@ -1306,11 +1306,12 @@ static int msm8x16_wcd_ext_spk_set(struct snd_kcontrol *kcontrol,
 			pr_info("howard set ext pa gpio 0\n");
 			break;
 		case 1:
+			if(gpio_is_valid(hp_spk_switch_gpio))
+				gpio_direction_output(hp_spk_switch_gpio, 1);
+			//msleep(50);
 			if(gpio_is_valid(ext_spk_pa_gpio))
 				gpio_direction_output(ext_spk_pa_gpio, 1);
 			current_ext_spk_pa_state = true;
-			if(gpio_is_valid(hp_spk_switch_gpio))
-				gpio_direction_output(hp_spk_switch_gpio, 1);
 			pr_info("howard set ext pa gpio 1\n");
 			break;
 		default:

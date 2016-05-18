@@ -3905,8 +3905,7 @@ static int smb135x_hw_init(struct smb135x_chg *chip)
 				rc);
 		goto free_regulator;
 	}
-	return 0;
-
+	
 	// by skj disable temperature monitor
 	rc = smb135x_masked_write(chip, CFG_1A_REG,
 					0xFF, 0);	

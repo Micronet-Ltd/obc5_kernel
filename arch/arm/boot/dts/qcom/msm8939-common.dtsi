@@ -54,7 +54,7 @@
 			linux,reserve-contiguous-region;
 			linux,reserve-region;
 			linux,remove-completely;
-			reg = <0x0 0x86800000 0x0 0x05500000>;
+			reg = <0x0 0x86800000 0x0 0x05600000>;
 			label = "modem_adsp_mem";
 		};
 
@@ -62,7 +62,7 @@
 			linux,reserve-contiguous-region;
 			linux,reserve-region;
 			linux,remove-completely;
-			reg = <0x0 0x8bd00000 0x0 0x0600000>;
+			reg = <0x0 0x8be00000 0x0 0x0600000>;
 			label = "peripheral_mem";
 		};
 
@@ -491,8 +491,10 @@
 		clocks = <&clock_rpm clk_xo_wlan_clk>,
 			 <&clock_rpm clk_rf_clk2>,
 			 <&clock_debug clk_gcc_debug_mux>,
-			 <&clock_gcc clk_wcnss_m_clk>;
-		clock-names = "xo", "rf_clk", "measure", "wcnss_debug";
+			 <&clock_gcc clk_wcnss_m_clk>,
+			 <&clock_gcc clk_gcc_snoc_qosgen_clk>;
+		clock-names = "xo", "rf_clk", "measure", "wcnss_debug",
+				"snoc_qosgen";
 
 		qcom,has-autodetect-xo;
 		qcom,is-pronto-vt;
@@ -860,7 +862,7 @@
 			 <&clock_gcc clk_gcc_blsp1_ahb_clk>;
 		clock-names = "core_clk", "iface_clk";
 	};
-	
+
 	dma_blsp1: qcom,sps-dma@7884000 { /* BLSP1 */
 		#dma-cells = <4>;
 		compatible = "qcom,sps-dma";
@@ -1094,7 +1096,15 @@
 		interrupt-names = "hc_irq", "pwr_irq";
 
 		qcom,bus-width = <8>;
-		qcom,cpu-dma-latency-us = <701>;
+
+		qcom,qos-planes = <3>;
+		qcom,cpu-dma-latency-us = <2 401 701>;
+		qcom,cpu-dma-latency-us-r = <2 401 701>;
+		qcom,cpu-dma-latency-us-w = <2 401 701>;
+		qcom,cpu-affinity-r = "affine_cores";
+		qcom,cpu-affinity-mask-r = <0xf0>;
+		qcom,modified-dynamic-qos;
+
 		qcom,msm-bus,name = "sdhc1";
 		qcom,msm-bus,num-cases = <8>;
 		qcom,msm-bus,num-paths = <1>;
@@ -1158,7 +1168,13 @@
 		ranges = <0x0 0x08600000 0x1000>;
 		#address-cells = <1>;
 		#size-cells = <1>;
-
+		
+		// by skj
+		download_mode@0 {
+			compatible = "qcom,msm-imem-download_mode";
+			reg = <0x0 8>;
+		};
+		
 		mem_dump_table@10 {
 			compatible = "qcom,msm-imem-mem_dump_table";
 			reg = <0x10 8>;
@@ -1178,6 +1194,11 @@
 			compatible = "qcom,msm-imem-boot_stats";
 			reg = <0x6b0 32>;
 		};
+		
+		emergency_download_mode@fe0 {
+			compatible = "qcom,msm-imem-emergency_download_mode";
+			reg = <0xfe0 12>;
+		};		
 	};
 
 	qcom,mpm2-sleep-counter@4a3000 {
@@ -1804,7 +1825,7 @@
 		qcom,decimation = <0>;
 		qcom,pre-div-channel-scaling = <0>;
 		qcom,calibration-type = "ratiometric";
-		qcom,scale-function = <1>;
+		qcom,scale-function = <16>; // by skj
 		qcom,hw-settle-time = <0xb>;
 		qcom,fast-avg-setup = <0>;
 	};
@@ -1881,4 +1902,3 @@
 	};
 };
 
-#include "msm8939-gpu.dtsi"

@@ -929,9 +929,9 @@ static int ft5x46_tp_glove_mode_init(struct device *dev,
                                    &ft5x46_tp_glove_prop_attr_group);
     	      if(rc)
     		    return rc;
-              tp_glove_mode_enable = true;
+              tp_glove_mode_enable = false;
               auc_i2c_write_buf[0] = 0xc0;
-              auc_i2c_write_buf[1] = 0x01;
+              auc_i2c_write_buf[1] = 0x00;
               fts_i2c_Write(client, auc_i2c_write_buf, 2);
 	      }         
 	}
@@ -952,66 +952,55 @@ static int ft5x46_tp_gesture_init(struct device *dev,
 
 static int ft5x46_tp_gesture_enable(struct i2c_client *client)
 {
-    u8 auc_i2c_write_buf[10];    	
-
-    pr_debug("%s..\n",__func__);
-    if(tp_gesture_enable == true){
-         return 0;
-    }
-       
-    auc_i2c_write_buf[0] = 0xd0;
+	u8 auc_i2c_write_buf[10];    	
+	
+	pr_debug("%s..\n",__func__);
+	if(tp_gesture_enable == true){
+	     return 0;
+	}
+	   
+	auc_i2c_write_buf[0] = 0xd0;
 	auc_i2c_write_buf[1] = 0x01;
 	fts_i2c_Write(client, auc_i2c_write_buf, 2);	//let fw open gestrue function
-
+	
 	auc_i2c_write_buf[0] = 0xd1;
 	auc_i2c_write_buf[1] = 0x3f;
 	fts_i2c_Write(client, auc_i2c_write_buf, 2);
-
-    auc_i2c_write_buf[0] = 0xd2;
+	
+	auc_i2c_write_buf[0] = 0xd2;
 	auc_i2c_write_buf[1] = 0xff;
 	fts_i2c_Write(client, auc_i2c_write_buf, 2);
+	
+	
+	tp_gesture_enable = true;
+	enable_irq_wake(client->irq);
 
-    #if 0
-	auc_i2c_write_buf[0] = 0xd0;
-	fts_i2c_Read(client, auc_i2c_write_buf,1,auc_i2c_write_buf,1);
-	pr_debug("%s,Reg 0xd0 is 0x%x\n",__func__,auc_i2c_write_buf[0]);
-    auc_i2c_write_buf[0] = 0xd1;
-	fts_i2c_Read(client, auc_i2c_write_buf,1,auc_i2c_write_buf,1);
-	pr_debug("%s,Reg 0xd1 is 0x%x\n",__func__,auc_i2c_write_buf[0]);
-    auc_i2c_write_buf[0] = 0xd2;
-	fts_i2c_Read(client, auc_i2c_write_buf,1,auc_i2c_write_buf,1);
-	pr_debug("%s,Reg 0xd2 is 0x%x\n",__func__,auc_i2c_write_buf[0]);
-    #endif
-    
-    tp_gesture_enable = true;
-    enable_irq_wake(client->irq);
-
-    return 0;
+  return 0;
 }
 
 void tp_gesture_enable_func(void)
 {
-    pr_debug("%s..\n",__func__);
-    if(tp_gesture_support == true){
-        ft5x46_tp_gesture_enable(ft5x46_i2c_client);
-        mdelay(200);
-    }        
+	pr_debug("%s..\n",__func__);
+	if(tp_gesture_support == true){
+	    ft5x46_tp_gesture_enable(ft5x46_i2c_client);
+	    mdelay(200);
+	}
 }
 EXPORT_SYMBOL(tp_gesture_enable_func);
 
 static int ft5x46_tp_gesture_disable(struct i2c_client *client)
 {
     
-    u8 auc_i2c_write_buf[10];
-
+	u8 auc_i2c_write_buf[10];
+	
 	auc_i2c_write_buf[0] = 0xd0;
 	auc_i2c_write_buf[1] = 0x00;
 	fts_i2c_Write(client, auc_i2c_write_buf, 2);	//let fw close gestrue function 
-   
-    disable_irq_wake(client->irq);
-    tp_gesture_enable = false;
-
-    return 0;
+	
+	disable_irq_wake(client->irq);
+	tp_gesture_enable = false;
+	
+	return 0;
 }
 void tp_gesture_disable_func(void)
 {
@@ -1434,14 +1423,7 @@ static int ft5x36_ts_suspend(struct device *dev)
 #ifdef CONFIG_TOUCHPANEL_PROXIMITY_SENSOR
 	is_suspend = 1;
 #endif
-//added by chenchen for proximity function 20140828 end
-    if(tp_glove_mode_enable == true){
-        u8 auc_i2c_write_buf[2];
-        auc_i2c_write_buf[0] = 0xc0;
-        auc_i2c_write_buf[1] = 0x00;
-        fts_i2c_Write(ft5x36_ts->client, auc_i2c_write_buf, 2);
-    }
-    
+
 	return 0;
 
 pwr_off_fail:
@@ -1471,14 +1453,15 @@ static int ft5x36_ts_resume(struct device *dev)
 
 	//wangkai_delete report in suspend_start
 //yuquan open this for touchkey crash
-
-	for (i = 0; i < 5; i++) {
-		input_mt_slot(ft5x36_ts->input_dev, i);
-		input_mt_report_slot_state(ft5x36_ts->input_dev, MT_TOOL_FINGER, 0);
+	if(false==tp_gesture_enable)
+	{	
+		for (i = 0; i < 5; i++) {
+			input_mt_slot(ft5x36_ts->input_dev, i);
+			input_mt_report_slot_state(ft5x36_ts->input_dev, MT_TOOL_FINGER, 0);
+		}
+		input_report_key(ft5x36_ts->input_dev, BTN_TOUCH, 0);
+		input_sync(ft5x36_ts->input_dev);
 	}
-	input_report_key(ft5x36_ts->input_dev, BTN_TOUCH, 0);
-	input_sync(ft5x36_ts->input_dev);
-
 //wangkai_delete report in suspend_end
 
 	if (!ft5x36_ts->suspended) {
@@ -1486,48 +1469,41 @@ static int ft5x36_ts_resume(struct device *dev)
 		return 0;
 	}
 
-    /*Modified by jiao.shp for tp gesture in 20141113 START*/
-    if(true != tp_gesture_enable){
-        if (ft5x36_ts->pdata->power_on) {
-    		err = ft5x36_ts->pdata->power_on(true);
-    		if (err) {
-    			dev_err(dev, "power on failed");
-    			return err;
-    		}
-    	} else {
-    		err = ft5x36_power_on(ft5x36_ts, true);
-    		if (err) {
-    			dev_err(dev, "power on failed");
-    			return err;
-    		}
-    	}
-    }
-	/*Modified by jiao.shp for tp gesture in 20141113 END*/
+  if(true != tp_gesture_enable){
+      if (ft5x36_ts->pdata->power_on) {
+  		err = ft5x36_ts->pdata->power_on(true);
+  		if (err) {
+  			dev_err(dev, "power on failed");
+  			return err;
+  		}
+  	} else {
+  		err = ft5x36_power_on(ft5x36_ts, true);
+  		if (err) {
+  			dev_err(dev, "power on failed");
+  			return err;
+  		}
+  	}
+  }
     
-//del by chenchen 20140825 begin
-/*modified for pin used touch start.zengguang 2014.08.22*/	
-//	if (ft5x36_ts->ts_pinctrl) {
-//		err = ft5x36_ts_pinctrl_select(ft5x36_ts, true);
-//		if (err < 0)
-//			pr_err("Cannot get idle pinctrl state\n");
-//	}
-/*modified for pin used touch end.zengguang 2014.08.22*/
-//del by chenchen 20140825 end
-	if (gpio_is_valid(ft5x36_ts->pdata->reset_gpio)) {
-		gpio_set_value_cansleep(ft5x36_ts->pdata->reset_gpio, 0);
-		msleep(FT_RESET_DLY);
-		gpio_set_value_cansleep(ft5x36_ts->pdata->reset_gpio, 1);
-	}
+  if(true == tp_gesture_enable){
+      ft5x46_tp_gesture_disable(ft5x36_ts->client);
+  }else{
+		if (gpio_is_valid(ft5x36_ts->pdata->reset_gpio)) {
+			gpio_set_value_cansleep(ft5x36_ts->pdata->reset_gpio, 0);
+			mdelay(FT_RESET_DLY);
+			gpio_set_value_cansleep(ft5x36_ts->pdata->reset_gpio, 1);
+		}
+		mdelay(FT_STARTUP_DLY);
 
-	msleep(FT_STARTUP_DLY);
+    enable_irq(ft5x36_ts->client->irq);
 
-	/*Modified by jiao.shp for tp gesture in 20141113 START*/
-    if(true == tp_gesture_enable){
-        ft5x46_tp_gesture_disable(ft5x36_ts->client);
-    }else{
-        enable_irq(ft5x36_ts->client->irq);
+   if(tp_glove_mode_enable == true){
+        u8 auc_i2c_write_buf[2];
+        auc_i2c_write_buf[0] = 0xc0;
+        auc_i2c_write_buf[1] = 0x01;
+        fts_i2c_Write(ft5x36_ts->client, auc_i2c_write_buf, 2);
     }
-    /*Modified by jiao.shp for tp gesture in 20141113 END*/
+  }
 
 	ft5x36_ts->suspended = false;
 //added by chenchen for proximity function 20140828 begin
@@ -1535,13 +1511,7 @@ static int ft5x36_ts_resume(struct device *dev)
 	tp_prox_sensor_enable(tp_prox_sensor_opened);
 	is_suspend = 0;
 #endif
-//added by chenchen for proximity function 20140828 end
-    if(tp_glove_mode_enable == true){
-        u8 auc_i2c_write_buf[2];
-        auc_i2c_write_buf[0] = 0xc0;
-        auc_i2c_write_buf[1] = 0x01;
-        fts_i2c_Write(ft5x36_ts->client, auc_i2c_write_buf, 2);
-    }	
+
 	return 0;
 }
 

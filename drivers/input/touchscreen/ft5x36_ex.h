@@ -20,6 +20,9 @@
 #define FT_UPGRADE_AA					0xAA
 #define FT_UPGRADE_55 					0x55
 
+#define FTS_UPGRADE_AA					0xAA
+#define FTS_UPGRADE_55 					0x55
+
 /*upgrade config of FT5606*/
 #define FT5606_UPGRADE_AA_DELAY 		50
 #define FT5606_UPGRADE_55_DELAY 		10
@@ -95,7 +98,7 @@
 #define FTS_SETTING_BUF_LEN      		128
 #define FTS_DMA_BUF_SIZE 				1024
 
-#define FTS_UPGRADE_LOOP				5
+#define FTS_UPGRADE_LOOP				50
 
 #define FTS_FACTORYMODE_VALUE			0x40
 #define FTS_WORKMODE_VALUE				0x00

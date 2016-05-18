@@ -67,6 +67,8 @@
 			focaltech,no-force-update;
 			focaltech,i2c-pull-up;
 			focaltech,auto_clb;
+			focaltech,tp_gesture_support;
+			focaltech,tp_glove_mode_support;
 		};
 	};
 	gen-vkeys {
@@ -603,4 +605,9 @@
 		linux,name = "flashlight";
 		linux,default-trigger = "flashlight-trigger";
 	};
+};
+
+// by skj
+&pm8916_l13 {
+	regulator-always-on;
 };

@@ -793,6 +793,7 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			 jack_type, mbhc->hph_status);
 		wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
 				    mbhc->hph_status, WCD_MBHC_JACK_MASK);
+		
 		wcd_mbhc_clr_and_turnon_hph_padac(mbhc);
 	}
 	pr_debug("%s: leave hph_status %x\n", __func__, mbhc->hph_status);
@@ -1418,6 +1419,10 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 		pr_warn("%s: failed to hold suspend\n", __func__);
 		r = IRQ_NONE;
 	} else {
+		/* add by howard to avoid pop sound after insert headset */
+		if(gpio_is_valid(ext_spk_pa_gpio))
+			gpio_direction_output(ext_spk_pa_gpio, 0);
+		pr_info("wcd_mbhc_mech_plug_detect_irq, howard set ext pa gpio 0\n");
 		/* Call handler */
 		wcd_mbhc_swch_irq_handler(mbhc);
 		wcd9xxx_spmi_unlock_sleep();

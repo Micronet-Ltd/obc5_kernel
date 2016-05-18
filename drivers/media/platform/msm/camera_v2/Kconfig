@@ -273,3 +273,9 @@ config MSM_FD
 	 depends on MSMB_CAMERA
 	 ---help---
 	    Enables support for the MSM FD face detection engine.
+		
+config PRODUCT_DARLING_OIS_ACTUATOR
+	 tristate "PRODUCT_DARLING_OIS_ACTUATOR"
+	 ---help---
+	    Enables support for PRODUCT_DARLING_OIS_ACTUATOR.
+		

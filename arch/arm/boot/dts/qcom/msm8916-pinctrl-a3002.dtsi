@@ -186,7 +186,7 @@
 		};
 		
 		watchdog_pin_active {
-			qcom,pins = <&gp 91>;
+			qcom,pins = <&gp 2>;
 			qcom,num-grp-pins = <1>;
 			qcom,pin-func = <0>;
 		        label = "watchdog_pin_active";
@@ -1180,9 +1180,9 @@
 		};
 
 		tlmm_gpio_key {
-			qcom,pins = <&gp 107>, <&gp 108>, <&gp 109>;
+			qcom,pins = <&gp 109>, <&gp 107>, <&gp 112>, <&gp 89>;
 			qcom,pin-func = <0>;
-			qcom,num-grp-pins = <3>;
+			qcom,num-grp-pins = <4>;
 			label = "tlmm_gpio_key";
 			gpio_key_active: gpio_key_active {
 				drive-strength = <2>;
