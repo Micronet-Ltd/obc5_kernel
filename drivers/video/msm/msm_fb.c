@@ -1666,7 +1666,7 @@ static int msm_fb_pan_idle(struct msm_fb_data_type *mfd)
 {
 	int ret = 0;
 
-	mutex_lock(&mfd->sync_mutex);
+    mutex_lock(&mfd->sync_mutex);
 	if (mfd->is_committing) {
 		mutex_unlock(&mfd->sync_mutex);
 		ret = wait_for_completion_interruptible_timeout(

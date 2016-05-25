@@ -179,10 +179,10 @@ static ssize_t virt_gpio_chr_write(struct file * file, const char __user * buf,
 	for(i = 0; i < dev->gpiochip_in.ngpio; i++) {
 		if(msg[2] & (1<<i)) {
 			if( msg[3] & (1<<i)) {
-				pr_debug(" set   INPUT%d\n", i);
+//				printk("%s set   INPUT%d\n", __func__, i);
 				set_bit(i, &dev->gpi_values);
 			} else {
-				pr_debug(" clear INPUT%d\n", i);
+//				printk("%s: clear INPUT%d\n", __func__, i);
 				clear_bit(i, &dev->gpi_values);
 			}
 		}
@@ -205,7 +205,7 @@ static int virt_gpio_out_request(struct gpio_chip *chip, unsigned offset)
 static int virt_gpio_in_request(struct gpio_chip *chip, unsigned offset)
 {
 	struct virt_gpio * dev = g_pvpgio;
-	pr_debug("%s() %d\n", __func__, offset);
+//	printk("%s: %d\n", __func__, offset);
 	set_bit(offset, &dev->enabled_in);
 
 	return 0;
@@ -234,6 +234,7 @@ static int virt_gpio_in_get(struct gpio_chip *chip, unsigned offset)
 {
 	struct virt_gpio * dev = g_pvpgio;
 
+//    printk("%s: %lx\n", __func__, dev->gpi_values);
 	return test_bit(offset, &dev->gpi_values) ? 1 : 0;
 }
 

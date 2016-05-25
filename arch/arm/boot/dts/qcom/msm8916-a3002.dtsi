@@ -12,12 +12,12 @@
 
 #include "msm8916.dtsi"
 #include "msm8916-pinctrl-a3002.dtsi"
-//#include "msm8916-camera-sensor-mtp.dtsi"
+/*#include "msm8916-camera-sensor-mtp.dtsi"*/
 #include "qrt_camera.dtsi"
 
 / {
 	aliases {
-		// by skj
+		/* by skj*/
 		serial0 = &blsp1_uart1;
 	};
 };
@@ -83,7 +83,7 @@
 		};
 	};
 
-	// by skj
+	/* by skj*/
 	i2c@78ba000 { /* BLSP1 QUP6 */
 		nfc@2b {
 			compatible = "nfc,pn544";
@@ -105,7 +105,7 @@
 			};
 	};
 
-	// by skj
+	/* by skj*/
 	obc_otg_vreg:usbotgobc { 
 		compatible = "regulator-gpio";
 		regulator-name = "obc_otg_vreg";
@@ -181,7 +181,7 @@
 		};
 
 */
-// by shengweiguang begin 
+/* by shengweiguang begin */
 	kionix@e{
 		compatible = "kionix,kxtj9";
 		reg = <0x0e>;
@@ -262,13 +262,13 @@
 	akm@d {
 		compatible = "ak,ak8963";
 		reg = <0x0d>;
-		//pinctrl-names = "default","sleep";
-		//pinctrl-0 = <&akm_default>;
-		//pinctrl-1 = <&akm_sleep>;
+		/*pinctrl-names = "default","sleep";
+		pinctrl-0 = <&akm_default>;
+		pinctrl-1 = <&akm_sleep>;*/
 		vdd-supply = <&pm8916_l17>;
 		vio-supply = <&pm8916_l6>;
 		ak,layout = <0x2>;
-		//ak,gpio_rstn = <&msm_gpio 36 0x0>;
+		/*ak,gpio_rstn = <&msm_gpio 36 0x0>;*/
 		ak,auto-report;
 	};
 	
@@ -281,7 +281,7 @@
 		bosch,axis-map-y = <1>;
 		bosch,axis-map-z = <2>;
 		bosch,negate-y;
-		//bosch,negate-z;
+		/*bosch,negate-z;*/
 		bosch,g-range = <3>;
 	};
 
@@ -323,14 +323,14 @@
 		bosch,oversample = <3>;
 		bosch,period = <1000>;
 	};
-// by shengweiguang end 
+/* by shengweiguang end */
 	};
 
-	// by skj beidou and leds
+	/* by skj beidou and leds*/
 	gpio-leds {
 		compatible = "gpio-leds";
 		pinctrl-names = "default";
-		// by skj
+		/* by skj*/
 		pinctrl-0 = <&button_backlight_off &gpio_led_off>;
 	
 		keypad-backlight {
@@ -360,8 +360,8 @@
 		ehang,toggle-pin = <&msm_gpio 2 0>;
 		ehang,suspend-state-pin = <&msm_gpio 91 0>;
 		ehang,rf-kill-pin = <&msm_gpio 9 0>;
-		//ehang,port-det-pin = <&msm_gpio 69 0>;
-		//ehang,usb-switch-pin = <&msm_gpio 15 0>;
+		/*ehang,port-det-pin = <&msm_gpio 69 0>;
+		ehang,usb-switch-pin = <&msm_gpio 15 0>;*/
 		ehang,high-delay=<1000>;
 		ehang,low-delay=<5000>;
 	};
@@ -503,7 +503,7 @@
 };
 
 &blsp1_uart1 {
-	// by skj
+	/* by skj*/
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart_console_sleep1>;	
 	status = "ok";
@@ -631,7 +631,7 @@
 };
 
 &dsi_h8394d_txd_innolux5p5_hd_vid {
- //     qcom,cont-splash-enabled;
+ /*     qcom,cont-splash-enabled; */
 };
 
 &dsi_h8394f_jd_auo5p5_hd_vid {
@@ -645,15 +645,15 @@
 
 &pm8916_vadc {
 	chan@30 {
-	// by skj
+	/* by skj*/
 		qcom,scale-function = <15>;
 	};
 };
 
 &pm8916_chg {
 	status = "ok";
-	// by skj
-	// qcom,use-external-charger;
+	/* by skj
+	 qcom,use-external-charger;*/
 	qcom,charging-disabled;
 };
 
@@ -669,7 +669,7 @@
 &pm8916_bms {
 	status = "ok";
 	qcom,battery-data = <&mtp_batterydata>;
-	// by skj
+	/* by skj*/
 	qcom,resume-soc = <99>;
 	qcom,charger-detect-cv;		
 };
@@ -677,7 +677,7 @@
 &spmi_bus {
 	qcom,pm8916@0 {
 		qcom,leds@a100 {
-			status = "disabled"; // by skj
+			status = "disabled"; /* by skj*/
 			qcom,led_mpp_2 {
 				label = "mpp";
 				linux,name = "button-backlight";
@@ -768,7 +768,7 @@
 	};
 };
 
-// by skj
+/* by skj*/
 &pm8916_l11 {
 	regulator-always-on;
 };
