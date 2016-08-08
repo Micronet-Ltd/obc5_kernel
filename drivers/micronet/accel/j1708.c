@@ -27,6 +27,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 #define J1708_MAX_MSG_EVENTS 128
 #define J1708_MSG_PAYLOAD_SIZE 21
+//#define J1708_DEBUG
 
 // TODO: make continous allocation
 struct j1708_msg {
@@ -135,6 +136,17 @@ static ssize_t virt_j1708_chr_read_in(struct file * file, char __user * buf,
 		mutex_unlock(&dev->queue_out.lock);
 
 		if(pmsg && msg.len) {
+#ifdef J1708_DEBUG
+        {
+            int i;
+            pr_err("%s() count %d\n", __func__, msg.len);
+            pr_err("%s() data: ", __func__);
+    		for (i = 0; i < msg.len; i++) {
+                pr_err("%x ", (unsigned int)(msg.data[i]));
+    		}
+            pr_err("\n");
+    	}
+#endif
 			if(copy_to_user(buf + read_count, msg.data, msg.len))
 				return -EINVAL;
 
@@ -152,25 +164,33 @@ static ssize_t virt_j1708_chr_write_in(struct file * file, const char __user * b
 	struct j1708_msg msg;
 	ssize_t w = 0;
 
-	if((count < J1708_MSG_PAYLOAD_SIZE) || (0 != (count % J1708_MSG_PAYLOAD_SIZE)))
+	if(count > J1708_MSG_PAYLOAD_SIZE)
 		return -EINVAL;
 
 	// This will never block
-	if (J1708_MSG_PAYLOAD_SIZE >= count) {
-		if(copy_from_user(msg.data, buf, count))
-			return -EACCES;
+    if(copy_from_user(msg.data, buf, count))
+        return -EACCES;
 
-        msg.len = count;
-
-		mutex_lock(&dev->queue_in.lock);
-		queue_add_msg(&dev->queue_in, &msg);
-		mutex_unlock(&dev->queue_in.lock);
-
-		wake_up_interruptible(&dev->queue_in.wq);
-		w += count;
+#ifdef J1708_DEBUG
+    {
+        int i;
+        pr_err("%s() count %x\n", __func__, (unsigned int)count);
+        pr_err("%s() data: ", __func__);
+		for (i = 0; i < count; i++) {
+            pr_err("%x ", (unsigned int)(msg.data[i]));
+		}
+        pr_err("\n");
 	}
-    else
-        return -ERANGE;
+#endif
+
+    msg.len = count;
+
+    mutex_lock(&dev->queue_in.lock);
+    queue_add_msg(&dev->queue_in, &msg);
+    mutex_unlock(&dev->queue_in.lock);
+
+    wake_up_interruptible(&dev->queue_in.wq);
+    w += count;
 
 	return w;
 }
@@ -222,6 +242,17 @@ static ssize_t virt_j1708_chr_read_out(struct file * file, char __user * buf,
 		mutex_unlock(&dev->queue_in.lock);
 
 		if(pmsg && msg.len) {
+#ifdef J1708_DEBUG
+        {
+            int i;
+            pr_err("%s() count %d\n", __func__, msg.len);
+            pr_err("%s() data: ", __func__);
+    		for (i = 0; i < msg.len; i++) {
+                pr_err("%x ", (unsigned int)(msg.data[i]));
+    		}
+            pr_err("\n");
+    	}
+#endif
 			if(copy_to_user(buf + read_count, msg.data, msg.len))
 				return -EINVAL;
 
@@ -239,25 +270,30 @@ static ssize_t virt_j1708_chr_write_out(struct file * file, const char __user * 
 	struct j1708_msg msg;
 	ssize_t w = 0;
 
-	if((count < J1708_MSG_PAYLOAD_SIZE) || (0 != (count % J1708_MSG_PAYLOAD_SIZE)))
+	if(count > J1708_MSG_PAYLOAD_SIZE)
 		return -EINVAL;
 
-	// This will never block
-	if (J1708_MSG_PAYLOAD_SIZE >= count) {
-		if(copy_from_user(msg.data, buf, count))
-			return -EACCES;
+    if(copy_from_user(msg.data, buf, count))
+        return -EACCES;
 
-		mutex_lock(&dev->queue_out.lock);
-		queue_add_msg(&dev->queue_out, &msg);
-		mutex_unlock(&dev->queue_out.lock);
-
-		wake_up_interruptible(&dev->queue_out.wq);
-		w += count;
+#ifdef J1708_DEBUG
+    {
+        int i;
+        pr_err("%s() count %x\n", __func__, (unsigned int)count);
+        pr_err("%s() data: ", __func__);
+		for (i = 0; i < count; i++) {
+            pr_err("%x ", (unsigned int)(msg.data[i]));
+		}
+        pr_err("\n");
 	}
-    else {
-        pr_err("%s: Error parameter\n", __FUNCTION__);
-        return -ERANGE;
-    }
+#endif
+
+    mutex_lock(&dev->queue_out.lock);
+    queue_add_msg(&dev->queue_out, &msg);
+    mutex_unlock(&dev->queue_out.lock);
+
+    wake_up_interruptible(&dev->queue_out.wq);
+    w += count;
 
 	return w;
 } 
@@ -334,5 +370,6 @@ module_init(virtual_j1708_init);
 module_exit(virtual_j1708_exit);
 
 MODULE_AUTHOR("Ruslan Sirota <ruslan.sirota@micronet-inc.com>");
-MODULE_DESCRIPTION("J1708 host interface r");
+MODULE_DESCRIPTION("J1708 host interface");
 MODULE_LICENSE("GPL");
+
