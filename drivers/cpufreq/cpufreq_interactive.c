@@ -667,6 +667,9 @@ static int cpufreq_interactive_speedchange_task(void *data)
 			struct cpufreq_interactive_cpuinfo *pjcpu;
 			u64 hvt;
 
+            if (!cpu_online(cpu))
+                continue;
+
 			pcpu = &per_cpu(cpuinfo, cpu);
 			if (!down_read_trylock(&pcpu->enable_sem))
 				continue;
@@ -1647,6 +1650,9 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			tunables->hispeed_freq = policy->max;
 
 		for_each_cpu(j, policy->cpus) {
+            if (!cpu_online(j))
+                continue;
+
 			pcpu = &per_cpu(cpuinfo, j);
 			pcpu->policy = policy;
 			pcpu->target_freq = policy->cur;
@@ -1694,41 +1700,43 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 				policy->cur, CPUFREQ_RELATION_L);
 
 		for_each_cpu(j, policy->cpus) {
-			pcpu = &per_cpu(cpuinfo, j);
+            if (cpu_online(j)) {
+    			pcpu = &per_cpu(cpuinfo, j);
 
-			down_read(&pcpu->enable_sem);
-			if (pcpu->governor_enabled == 0) {
-				up_read(&pcpu->enable_sem);
-				continue;
-			}
+    			down_read(&pcpu->enable_sem);
+    			if (pcpu->governor_enabled == 0) {
+    				up_read(&pcpu->enable_sem);
+    				continue;
+    			}
 
-			spin_lock_irqsave(&pcpu->target_freq_lock, flags);
-			if (policy->max < pcpu->target_freq)
-				pcpu->target_freq = policy->max;
-			else if (policy->min > pcpu->target_freq)
-				pcpu->target_freq = policy->min;
+    			spin_lock_irqsave(&pcpu->target_freq_lock, flags);
+    			if (policy->max < pcpu->target_freq)
+    				pcpu->target_freq = policy->max;
+    			else if (policy->min > pcpu->target_freq)
+    				pcpu->target_freq = policy->min;
 
-			spin_unlock_irqrestore(&pcpu->target_freq_lock, flags);
-			up_read(&pcpu->enable_sem);
+    			spin_unlock_irqrestore(&pcpu->target_freq_lock, flags);
+    			up_read(&pcpu->enable_sem);
 
-			/* Reschedule timer only if policy->max is raised.
-			 * Delete the timers, else the timer callback may
-			 * return without re-arm the timer when failed
-			 * acquire the semaphore. This race may cause timer
-			 * stopped unexpectedly.
-			 */
+    			/* Reschedule timer only if policy->max is raised.
+    			 * Delete the timers, else the timer callback may
+    			 * return without re-arm the timer when failed
+    			 * acquire the semaphore. This race may cause timer
+    			 * stopped unexpectedly.
+    			 */
 
-			if (policy->max > pcpu->max_freq) {
-				pcpu->reject_notification = true;
-				down_write(&pcpu->enable_sem);
-				del_timer_sync(&pcpu->cpu_timer);
-				del_timer_sync(&pcpu->cpu_slack_timer);
-				cpufreq_interactive_timer_resched(j);
-				up_write(&pcpu->enable_sem);
-				pcpu->reject_notification = false;
-			}
+    			if (policy->max > pcpu->max_freq) {
+    				pcpu->reject_notification = true;
+    				down_write(&pcpu->enable_sem);
+    				del_timer_sync(&pcpu->cpu_timer);
+    				del_timer_sync(&pcpu->cpu_slack_timer);
+    				cpufreq_interactive_timer_resched(j);
+    				up_write(&pcpu->enable_sem);
+    				pcpu->reject_notification = false;
+    			}
 
-			pcpu->max_freq = policy->max;
+    			pcpu->max_freq = policy->max;
+            }
 		}
 		break;
 	}
