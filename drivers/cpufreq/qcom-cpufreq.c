@@ -17,6 +17,8 @@
  *
  */
 
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/cpufreq.h>
@@ -24,6 +26,7 @@
 #include <linux/cpumask.h>
 #include <linux/suspend.h>
 #include <linux/clk.h>
+#include <linux/clk/msm-clk-provider.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
@@ -41,6 +44,11 @@ struct cpufreq_suspend_t {
 	int device_suspended;
 };
 
+struct cpu_freq_t {
+    uint32_t freq;
+};
+static struct cpu_freq_t cpu_freqs[NR_CPUS];
+
 static DEFINE_PER_CPU(struct cpufreq_suspend_t, cpufreq_suspend);
 
 static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
@@ -54,7 +62,9 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 	freqs.new = new_freq;
 	freqs.cpu = policy->cpu;
 
-	cpufreq_notify_transition(policy, &freqs, CPUFREQ_PRECHANGE);
+//    pr_notice("cpu%d, %u ---> %u\n", policy->cpu, new_freq, cpu_freqs[policy->cpu].freq);
+
+    cpufreq_notify_transition(policy, &freqs, CPUFREQ_PRECHANGE);
 
 	trace_cpu_frequency_switch_start(freqs.old, freqs.new, policy->cpu);
 
@@ -62,13 +72,52 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 	rate = clk_round_rate(cpu_clk[policy->cpu], rate);
 	ret = clk_set_rate(cpu_clk[policy->cpu], rate);
 	if (!ret) {
+        cpu_freqs[policy->cpu].freq = new_freq;
 		cpufreq_notify_transition(policy, &freqs, CPUFREQ_POSTCHANGE);
 		trace_cpu_frequency_switch_end(policy->cpu);
 	}
 
 	return ret;
 }
+#if 0
+static int msm_cpufreq_setpolicy(struct cpufreq_policy *policy)
+{
+	int err = 0;
+	int index;
+	struct cpufreq_frequency_table *table;
 
+    if (cpu_freqs[policy->cpu].freq == policy->cur)
+		return 0;
+
+    do {
+    	mutex_lock(&per_cpu(cpufreq_suspend, policy->cpu).suspend_mutex);
+
+    	if (per_cpu(cpufreq_suspend, policy->cpu).device_suspended) {
+    		pr_debug("cpufreq: cpu%d scheduling frequency change "
+    				"in suspend.\n", policy->cpu);
+    		err = -EFAULT;
+            break;
+    	}
+
+    	table = cpufreq_frequency_get_table(policy->cpu);
+    	if (cpufreq_frequency_table_target(policy, table, policy->cur, CPUFREQ_RELATION_L, &index)) {
+    		pr_err("cpufreq: invalid target_freq: %d\n", policy->cur);
+    		err = -EINVAL;
+            break;
+    	}
+
+    	pr_debug("CPU[%d] target %d (%d-%d) selected %d\n",
+    		policy->cpu, policy->cur,
+    		policy->min, policy->max, table[index].frequency);
+
+    	err = set_cpu_freq(policy, table[index].frequency, table[index].driver_data);
+    } while (0);
+
+	mutex_unlock(&per_cpu(cpufreq_suspend, policy->cpu).suspend_mutex);
+
+	return err;
+}
+#else
 static int msm_cpufreq_target(struct cpufreq_policy *policy,
 				unsigned int target_freq,
 				unsigned int relation)
@@ -79,7 +128,8 @@ static int msm_cpufreq_target(struct cpufreq_policy *policy,
 
 	mutex_lock(&per_cpu(cpufreq_suspend, policy->cpu).suspend_mutex);
 
-	if (target_freq == policy->cur)
+//	if (target_freq == policy->cur)
+    if (cpu_freqs[policy->cpu].freq == target_freq)
 		goto done;
 
 	if (per_cpu(cpufreq_suspend, policy->cpu).device_suspended) {
@@ -107,10 +157,11 @@ done:
 	mutex_unlock(&per_cpu(cpufreq_suspend, policy->cpu).suspend_mutex);
 	return ret;
 }
+#endif
 
 static int msm_cpufreq_verify(struct cpufreq_policy *policy)
 {
-	cpufreq_verify_within_limits(policy, policy->cpuinfo.min_freq,
+    cpufreq_verify_within_limits(policy, policy->cpuinfo.min_freq,
 			policy->cpuinfo.max_freq);
 	return 0;
 }
@@ -160,9 +211,10 @@ static int msm_cpufreq_init(struct cpufreq_policy *policy)
 			   table[index].driver_data);
 	if (ret)
 		return ret;
-	pr_debug("cpufreq: cpu%d init at %d switching to %d\n",
+
+	pr_notice("cpu%u init at %d switching to %u\n",
 			policy->cpu, cur_freq, table[index].frequency);
-	policy->cur = table[index].frequency;
+	cpu_freqs[policy->cpu].freq = policy->cur = table[index].frequency;
 	cpufreq_frequency_table_get_attr(table, policy->cpu);
 
 	return 0;
@@ -217,7 +269,6 @@ static int msm_cpufreq_cpu_callback(struct notifier_block *nfb,
 			return NOTIFY_BAD;
 		}
 		break;
-
 	default:
 		break;
 	}
@@ -306,6 +357,7 @@ static struct cpufreq_driver msm_cpufreq_driver = {
 	.init		= msm_cpufreq_init,
 	.verify		= msm_cpufreq_verify,
 	.target		= msm_cpufreq_target,
+//    .setpolicy	= msm_cpufreq_setpolicy,
 	.get		= msm_cpufreq_get_freq,
 	.name		= "msm",
 	.attr		= msm_freq_attr,
@@ -395,6 +447,7 @@ static int __init msm_cpufreq_probe(struct platform_device *pdev)
 		if (IS_ERR(c))
 			return PTR_ERR(c);
 		cpu_clk[cpu] = c;
+        pr_notice("%s [%lu] Hz\n", clk_name, c->rate);
 	}
 	hotplug_ready = true;
 
@@ -405,8 +458,14 @@ static int __init msm_cpufreq_probe(struct platform_device *pdev)
 	/* Parse commong cpufreq table for all CPUs */
 	ftbl = cpufreq_parse_dt(dev, "qcom,cpufreq-table", 0);
 	if (!IS_ERR(ftbl)) {
+        int i;
 		for_each_possible_cpu(cpu)
 			per_cpu(freq_table, cpu) = ftbl;
+
+        pr_notice("freq table\n");
+        for (i = 0; ftbl[i].frequency != CPUFREQ_TABLE_END; i++) {
+            pr_notice("\t%8u Hz\n", ftbl[i].frequency);
+        }
 		return 0;
 	}
 
