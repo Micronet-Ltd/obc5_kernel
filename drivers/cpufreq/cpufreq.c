@@ -317,6 +317,7 @@ static void __cpufreq_notify_transition(struct cpufreq_policy *policy,
 		srcu_notifier_call_chain(&cpufreq_transition_notifier_list,
 				CPUFREQ_POSTCHANGE, freqs);
 		if (likely(policy) && likely(policy->cpu == freqs->cpu)) {
+//            pr_notice("CPUFREQ_POSTCHANGE cpu[%lu] %lu Hz\n", (unsigned long)freqs->cpu, (unsigned long)freqs->new);
 			policy->cur = freqs->new;
 			sysfs_notify(&policy->kobj, NULL, "scaling_cur_freq");
 		}

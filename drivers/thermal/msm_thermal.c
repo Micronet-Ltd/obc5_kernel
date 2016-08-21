@@ -1185,6 +1185,7 @@ static int vdd_restriction_apply_freq(struct rail *r, int level)
 	if (level == r->curr_level)
 		return ret;
 
+    pr_notice("\n");
 	/* level = -1: disable, level = 0,1,2..n: enable */
 	if (level == -1) {
 		ret = update_cpu_min_freq_all(r->min_level);
@@ -1210,6 +1211,7 @@ static int vdd_restriction_apply_voltage(struct rail *r, int level)
 {
 	int ret = 0;
 
+    pr_notice("\n");
 	if (r->reg == NULL) {
 		pr_err("%s don't have regulator handle. can't apply vdd\n",
 				r->name);
@@ -2526,6 +2528,7 @@ static int do_vdd_restriction(void)
 	if (!vdd_rstr_enabled)
 		return ret;
 
+    pr_notice("\n");
 	if (usefreq && !freq_table_get) {
 		if (check_freq_table() && !core_ptr)
 			return ret;
@@ -2732,6 +2735,10 @@ static struct notifier_block __refdata msm_thermal_cpu_notifier = {
 
 static void do_freq_update(uint32_t cpu, uint32_t freq)
 {
+//    if (0 == cpu && freq == table[limit_idx_low].frequency) {
+//        return;
+//    }
+
     if (cpus[cpu].limited_max_freq != freq) {
     	get_online_cpus();
         //	pr_notice("Limiting cpu%d frequency to %u [%ld deg C]\n", cpu, max_freq, temp);
@@ -3072,6 +3079,7 @@ static int freq_mitigation_notify(enum thermal_trip_type type,
     case THERMAL_TRIP_CONFIGURABLE_HI:
         //therm_get_temp(cpu_node->sensor_id, cpu_node->sensor_type, &temp);
         if (0 == cpu_node->cpu && 2 * cpu_node->threshold[FREQ_THRESHOLD_HIGH].temp - cpu_node->threshold[FREQ_THRESHOLD_LOW].temp < temp){
+//        if (0 == cpu_node->cpu && cpu_node->threshold[FREQ_THRESHOLD_HIGH].temp + 30 < temp){
             pr_notice("%s reached to critical temperature [%d deg C]\n", cpu_node->sensor_type, temp);
             pr_notice("urgent shutdown\n");
             orderly_poweroff(1);
@@ -3480,7 +3488,7 @@ static void vdd_restriction_notify(struct therm_threshold *trig_thresh)
 		goto set_and_exit;
 
 	mutex_lock(&vdd_rstr_mutex);
-	pr_debug("sensor:%d reached %s thresh for Vdd restriction\n",
+	pr_notice("sensor:%d reached %s thresh for Vdd restriction\n",
 		tsens_id_map[trig_thresh->sensor_id],
 		(trig_thresh->trip_triggered == THERMAL_TRIP_CONFIGURABLE_HI) ?
 		"high" : "low");
@@ -3575,6 +3583,7 @@ static __ref int do_thermal_monitor(void *data)
 			;
 		INIT_COMPLETION(thermal_monitor_complete);
 
+        pr_notice("\n");
 		mutex_lock(&threshold_mutex);
 		list_for_each_entry(thresholds, &thresholds_list, list_ptr) {
 			if (!thresholds->thresh_triggered)
@@ -3697,6 +3706,7 @@ static int msm_thermal_notify(enum thermal_trip_type type, int temp, void *data)
 {
 	struct therm_threshold *thresh_data = (struct therm_threshold *)data;
 
+    pr_notice("%u\n", thresh_data->sensor_id);
 	if (thermal_monitor_task) {
 		thresh_data->trip_triggered = type;
 		thresh_data->parent->thresh_triggered = true;

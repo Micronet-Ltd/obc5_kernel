@@ -62,8 +62,6 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 	freqs.new = new_freq;
 	freqs.cpu = policy->cpu;
 
-//    pr_notice("cpu%d, %u ---> %u\n", policy->cpu, new_freq, cpu_freqs[policy->cpu].freq);
-
     cpufreq_notify_transition(policy, &freqs, CPUFREQ_PRECHANGE);
 
 	trace_cpu_frequency_switch_start(freqs.old, freqs.new, policy->cpu);
@@ -72,10 +70,11 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 	rate = clk_round_rate(cpu_clk[policy->cpu], rate);
 	ret = clk_set_rate(cpu_clk[policy->cpu], rate);
 	if (!ret) {
-        cpu_freqs[policy->cpu].freq = new_freq;
-		cpufreq_notify_transition(policy, &freqs, CPUFREQ_POSTCHANGE);
-		trace_cpu_frequency_switch_end(policy->cpu);
+//        pr_notice("cpu%d, %u ---> %u\n", policy->cpu, new_freq, cpu_freqs[policy->cpu].freq);
 	}
+    cpu_freqs[policy->cpu].freq = new_freq;
+    cpufreq_notify_transition(policy, &freqs, CPUFREQ_POSTCHANGE);
+    trace_cpu_frequency_switch_end(policy->cpu);
 
 	return ret;
 }

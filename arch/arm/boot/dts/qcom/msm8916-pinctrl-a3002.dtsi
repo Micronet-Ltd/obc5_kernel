@@ -184,7 +184,18 @@
 				bias-disable;
 			};
 		};
-		
+/*		
+		urgent_shut_down {
+			qcom,pins = <&gp 91>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <0>;
+		        label = "urgent_shut_down";
+			urgent_shut_down_pin: default {
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+*/		
 		watchdog_pin_active {
 			qcom,pins = <&gp 2>;
 			qcom,num-grp-pins = <1>;

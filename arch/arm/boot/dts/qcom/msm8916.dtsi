@@ -1613,17 +1613,23 @@
 		compatible = "qcom,msm-thermal";
 		qcom,sensor-id = <5>;
 		qcom,poll-ms = <1000>;
-		qcom,limit-temp = <60>;
+		qcom,limit-temp = <68>;
 		qcom,temp-hysteresis = <10>;
+/*		qcom,limit-temp = <50>;
+		qcom,temp-hysteresis = <1>;*/
 		qcom,freq-step = <1>;
 		qcom,freq-control-mask = <0xf>;
 		qcom,core-limit-temp = <80>;
 		qcom,core-temp-hysteresis = <10>;
 		qcom,core-control-mask = <0xe>;
+		/*qcom,hotplug-temp = <53>;
+		qcom,hotplug-temp-hysteresis = <2>;*/
 		qcom,hotplug-temp = <80>;
 		qcom,hotplug-temp-hysteresis = <10>;
 		qcom,cpu-sensors = "tsens_tz_sensor5", "tsens_tz_sensor5",
 				"tsens_tz_sensor4", "tsens_tz_sensor4";
+		/*qcom,freq-mitigation-temp = <56>;
+		qcom,freq-mitigation-temp-hysteresis = <2>;*/
 		qcom,freq-mitigation-temp = <85>;
 		qcom,freq-mitigation-temp-hysteresis = <12>;
 		qcom,freq-mitigation-value = <200000>;
