@@ -1115,7 +1115,7 @@ static int check_freq_table(void)
     for (i = limit_idx_low; i < limit_idx_high; i++) {
         pr_notice("%8u Hz\n", table[i].frequency);
     }
-    //limit_idx_low ++;
+//    limit_idx_low ++;
 
 	if (limit_idx_high < 0 || limit_idx_high < limit_idx_low) {
 		invalid_table = true;
@@ -1185,7 +1185,6 @@ static int vdd_restriction_apply_freq(struct rail *r, int level)
 	if (level == r->curr_level)
 		return ret;
 
-    pr_notice("\n");
 	/* level = -1: disable, level = 0,1,2..n: enable */
 	if (level == -1) {
 		ret = update_cpu_min_freq_all(r->min_level);
@@ -1211,7 +1210,6 @@ static int vdd_restriction_apply_voltage(struct rail *r, int level)
 {
 	int ret = 0;
 
-    pr_notice("\n");
 	if (r->reg == NULL) {
 		pr_err("%s don't have regulator handle. can't apply vdd\n",
 				r->name);
@@ -1898,6 +1896,7 @@ int sensor_mgr_set_threshold(uint32_t zone_id,
 		switch (threshold[i].trip) {
 		case THERMAL_TRIP_CONFIGURABLE_HI:
 			if (threshold[i].temp >= temp) {
+//                pr_notice("zone[%u] hi %ld\n", zone_id, threshold[i].temp);
 				ret = set_and_activate_threshold(zone_id,
 					&threshold[i]);
 				if (ret)
@@ -1906,6 +1905,7 @@ int sensor_mgr_set_threshold(uint32_t zone_id,
 			break;
 		case THERMAL_TRIP_CONFIGURABLE_LOW:
 			if (threshold[i].temp <= temp) {
+//                pr_notice("zone[%u] low %ld\n", zone_id, threshold[i].temp);
 				ret = set_and_activate_threshold(zone_id,
 					&threshold[i]);
 				if (ret)
@@ -2528,7 +2528,6 @@ static int do_vdd_restriction(void)
 	if (!vdd_rstr_enabled)
 		return ret;
 
-    pr_notice("\n");
 	if (usefreq && !freq_table_get) {
 		if (check_freq_table() && !core_ptr)
 			return ret;
@@ -2740,13 +2739,10 @@ static void do_freq_update(uint32_t cpu, uint32_t freq)
 //    }
 
     if (cpus[cpu].limited_max_freq != freq) {
-    	get_online_cpus();
-        //	pr_notice("Limiting cpu%d frequency to %u [%ld deg C]\n", cpu, max_freq, temp);
+        pr_notice("cpu%d %u Hz\n", cpu, freq);
         cpus[cpu].limited_max_freq = freq; 
         if (!SYNC_CORE(cpu))
             update_cpu_freq(cpu);
-        update_cluster_freq();
-        put_online_cpus();
     }
 }
 
@@ -2771,6 +2767,7 @@ static uint32_t limitfreq(long temp)
             limit_idx -= msm_thermal_info.bootup_freq_step;
             if (limit_idx < limit_idx_low)
                 limit_idx = limit_idx_low;
+            pr_notice("%u Hz [%ld deg C]\n", table[limit_idx].frequency, temp);
         }
         limit_freq = table[limit_idx].frequency;
     } else if (temp < cpus[cpu].threshold[LIMIT_FREQ_THRESHOLD_LOW].temp) {
@@ -2779,6 +2776,7 @@ static uint32_t limitfreq(long temp)
             if (limit_idx > limit_idx_high) {
                 limit_idx = limit_idx_high;
             }
+            pr_notice("%u Hz [%ld deg C]\n", table[limit_idx].frequency, temp);
         }
         limit_freq = table[limit_idx].frequency;
     }
@@ -2813,20 +2811,35 @@ static void limit_freq(struct work_struct *work)
 
 #if 1
     freq = limitfreq(max_temp);
+    mutex_lock(&core_control_mutex);
+    get_online_cpus();
     for_each_possible_cpu(cpu) {
         if (!(msm_thermal_info.bootup_freq_control_mask & BIT(cpus[cpu].cpu)))
             continue;
 
-        mutex_lock(&core_control_mutex);
+        if (cpus[cpu].max_freq) {
+            if (2 * cpus[cpu].threshold[FREQ_THRESHOLD_HIGH].temp - cpus[cpu].threshold[FREQ_THRESHOLD_LOW].temp < max_temp){
+                pr_notice("%s reached to critical temperature [%ld deg C]\n", cpus[cpu].sensor_type, max_temp);
+                pr_notice("urgent shutdown\n");
+                orderly_poweroff(1);
+            }
+            continue;
+        }
+//        if (0 == cpu && cpus[cpu].limited_max_freq == table[limit_idx_low + 1].frequency) {
+//            continue;
+//        }
         //if (max_temp >= msm_thermal_info.limit_temp_degC)
         //    cpus[cpu].max_freq = 1;
         //else if (max_temp < msm_thermal_info.limit_temp_degC - msm_thermal_info.temp_hysteresis_degC)
         //    cpus[cpu].max_freq = 0;
-        if (!cpus[cpu].offline) {
-            do_freq_update(cpu, freq); 
+        if (cpus[cpu].offline) {
+            continue;
         }
-        mutex_unlock(&core_control_mutex);
+        do_freq_update(cpu, freq); 
     }
+    update_cluster_freq();
+    put_online_cpus();
+    mutex_unlock(&core_control_mutex);
 #endif
 	schedule_delayed_work(&limit_freq_work, msecs_to_jiffies(msm_thermal_info.poll_ms));
 }
@@ -2835,7 +2848,6 @@ static void limit_freq(struct work_struct *work)
 static int hotplug_notify(enum thermal_trip_type type, int temp, void *data)
 {
 	struct cpu_info *cpu_node = (struct cpu_info *)data;
-//    int dout = 0;
 
 	if (!(msm_thermal_info.core_control_mask & BIT(cpu_node->cpu)))
 		return 0;
@@ -2843,23 +2855,19 @@ static int hotplug_notify(enum thermal_trip_type type, int temp, void *data)
 	case THERMAL_TRIP_CONFIGURABLE_HI:
 		if (!(cpu_node->offline)) {
 			cpu_node->offline = 1;
-//            dout = 1;
+            pr_notice("%s reach hi threshold[%d deg C] cpu[%u] --> down\n", cpu_node->sensor_type, temp, cpu_node->cpu); 
         }
 		break;
 	case THERMAL_TRIP_CONFIGURABLE_LOW:
 		if (cpu_node->offline) {
 			cpu_node->offline = 0;
-//            dout = 1;
+            pr_notice("%s reach low threshold[%d deg C] cpu[%u] --> up\n", cpu_node->sensor_type, temp, cpu_node->cpu); 
         }
 		break;
 	default:
 		break;
 	}
 
-//    if (dout) {
-//        dout = 0;
-//        pr_notice("%s reach threshold[%d deg C] cpu[%u] --> %s\n", cpu_node->sensor_type, temp, cpu_node->cpu, (cpu_node->offline) ? "off" : "on"); 
-//    }
 
 	if (hotplug_task) {
 		cpu_node->hotplug_thresh_clear = true;
@@ -2868,12 +2876,12 @@ static int hotplug_notify(enum thermal_trip_type type, int temp, void *data)
 		pr_err("Hotplug task is not initialized\n");
 	return 0;
 }
+
 /* Adjust cpus offlined bit based on temperature reading. */
 static int hotplug_init_cpu_offlined(void)
 {
 	long temp = 0;
 	uint32_t cpu = 0;
-//    int dout = 0;
 
 	if (!hotplug_enabled)
 		return 0;
@@ -2892,16 +2900,12 @@ static int hotplug_init_cpu_offlined(void)
 
 		if (temp >= msm_thermal_info.hotplug_temp_degC) {
 			cpus[cpu].offline = 1;
-//            dout = 1;
+            pr_notice("[cpu%d] down\n", cpu);
         } else if (temp <= (msm_thermal_info.hotplug_temp_degC - msm_thermal_info.hotplug_temp_hysteresis_degC)) {
             cpus[cpu].offline = 0;
-//            dout = 1;
+            pr_notice("[cpu%d] up\n", cpu);
         }
 
-//        if (dout) {
-//            dout = 0;
-//            pr_notice("[cpu%d] %s\n", cpu, (cpus[cpu].offline)?"off":"on");
-//        }
 	}
 	mutex_unlock(&core_control_mutex);
 
@@ -2914,8 +2918,7 @@ static int hotplug_init_cpu_offlined(void)
 	return 0;
 }
 
-static int freq_mitigation_notify(enum thermal_trip_type type,
-	int temp, void *data);
+static int msm_thermal_notify(enum thermal_trip_type type, int temp, void *data);
 static void hotplug_init(void)
 {
 	uint32_t cpu = 0;
@@ -2931,34 +2934,37 @@ static void hotplug_init(void)
 		cpus[cpu].sensor_id = sensor_get_id((char *)cpus[cpu].sensor_type);
 		cpus[cpu].id_type = THERM_ZONE_ID;
 
-		if (!(msm_thermal_info.core_control_mask & BIT(cpus[cpu].cpu)))
+        pr_notice("[cpu%d] limit [%u,%s] %d,%d\n", cpu, cpus[cpu].sensor_id, cpus[cpu].sensor_type,
+               msm_thermal_info.limit_temp_degC - msm_thermal_info.temp_hysteresis_degC,
+               msm_thermal_info.limit_temp_degC);
+
+        limit_hi_thresh = &cpus[cpu].threshold[LIMIT_FREQ_THRESHOLD_HIGH];
+        limit_low_thresh = &cpus[cpu].threshold[LIMIT_FREQ_THRESHOLD_LOW];
+
+        limit_hi_thresh->temp = msm_thermal_info.limit_temp_degC;
+        limit_hi_thresh->trip = THERMAL_TRIP_CONFIGURABLE_HI;
+
+        limit_low_thresh->temp = msm_thermal_info.limit_temp_degC - msm_thermal_info.temp_hysteresis_degC;
+        limit_low_thresh->trip = THERMAL_TRIP_CONFIGURABLE_LOW;
+
+        limit_hi_thresh->notify = limit_low_thresh->notify = msm_thermal_notify;
+        limit_hi_thresh->data = limit_low_thresh->data = (void *)&cpus[cpu];
+
+        if (!(msm_thermal_info.core_control_mask & BIT(cpus[cpu].cpu)))
 			continue;
 
-        pr_notice("[cpu%d] [%u,%s] %d,%d\n", cpu, cpus[cpu].sensor_id, cpus[cpu].sensor_type,
+        pr_notice("[cpu%d] hotplug [%u,%s] %d,%d\n", cpu, cpus[cpu].sensor_id, cpus[cpu].sensor_type,
                msm_thermal_info.hotplug_temp_degC - msm_thermal_info.hotplug_temp_hysteresis_degC,
                msm_thermal_info.hotplug_temp_degC);
 
 		hi_thresh = &cpus[cpu].threshold[HOTPLUG_THRESHOLD_HIGH];
 		low_thresh = &cpus[cpu].threshold[HOTPLUG_THRESHOLD_LOW];
-
-        limit_hi_thresh = &cpus[cpu].threshold[LIMIT_FREQ_THRESHOLD_HIGH];
-        limit_low_thresh = &cpus[cpu].threshold[LIMIT_FREQ_THRESHOLD_LOW];
-
         hi_thresh->temp = msm_thermal_info.hotplug_temp_degC;
         hi_thresh->trip = THERMAL_TRIP_CONFIGURABLE_HI;
-
-        limit_hi_thresh->temp = msm_thermal_info.limit_temp_degC;
-        limit_hi_thresh->trip = THERMAL_TRIP_CONFIGURABLE_HI;
-
         low_thresh->temp = msm_thermal_info.hotplug_temp_degC - msm_thermal_info.hotplug_temp_hysteresis_degC;
 		low_thresh->trip = THERMAL_TRIP_CONFIGURABLE_LOW;
-
-        limit_low_thresh->temp = msm_thermal_info.limit_temp_degC - msm_thermal_info.temp_hysteresis_degC;
-        limit_low_thresh->trip = THERMAL_TRIP_CONFIGURABLE_LOW;
-
         hi_thresh->notify = low_thresh->notify = hotplug_notify;
-		limit_hi_thresh->notify = freq_mitigation_notify;
-		limit_hi_thresh->data = hi_thresh->data = low_thresh->data = (void *)&cpus[cpu];
+		hi_thresh->data = low_thresh->data = (void *)&cpus[cpu];
 
 		sensor_mgr_set_threshold(cpus[cpu].sensor_id, hi_thresh);
 	}
@@ -3077,15 +3083,8 @@ static int freq_mitigation_notify(enum thermal_trip_type type,
 
 	switch (type) {
     case THERMAL_TRIP_CONFIGURABLE_HI:
-        //therm_get_temp(cpu_node->sensor_id, cpu_node->sensor_type, &temp);
-        if (0 == cpu_node->cpu && 2 * cpu_node->threshold[FREQ_THRESHOLD_HIGH].temp - cpu_node->threshold[FREQ_THRESHOLD_LOW].temp < temp){
-//        if (0 == cpu_node->cpu && cpu_node->threshold[FREQ_THRESHOLD_HIGH].temp + 30 < temp){
-            pr_notice("%s reached to critical temperature [%d deg C]\n", cpu_node->sensor_type, temp);
-            pr_notice("urgent shutdown\n");
-            orderly_poweroff(1);
-        }
 		if (!cpu_node->max_freq) {
-            pr_notice("%s reached mitigation threshold [%d deg C]\n", cpu_node->sensor_type, temp);
+            pr_notice("%s reached hi threshold [%d deg C]\n", cpu_node->sensor_type, temp);
 			pr_notice("limit cpu%d frequency to %d\n", cpu_node->cpu, msm_thermal_info.freq_limit);
 
 			cpu_node->max_freq = true;
@@ -3093,8 +3092,7 @@ static int freq_mitigation_notify(enum thermal_trip_type type,
 		break;
 	case THERMAL_TRIP_CONFIGURABLE_LOW:
 		if (cpu_node->max_freq) {
-			pr_notice("Removing frequency mitigation for cpu%d\n",
-				cpu_node->cpu);
+            pr_notice("%s reached low threshold [%d deg C]\n", cpu_node->sensor_type, temp);
 
 			cpu_node->max_freq = false;
 		}
@@ -3116,7 +3114,7 @@ static int freq_mitigation_notify(enum thermal_trip_type type,
 static void freq_mitigation_init(void)
 {
 	uint32_t cpu = 0;
-	struct sensor_threshold *hi_thresh = NULL, *low_thresh = NULL, *limit_hi_thresh = 0, *limit_low_thresh = 0;
+	struct sensor_threshold *hi_thresh = NULL, *low_thresh = NULL;
 
 	if (freq_mitigation_task)
 		return;
@@ -3131,24 +3129,12 @@ static void freq_mitigation_init(void)
                msm_thermal_info.freq_mitig_temp_degc);
 		hi_thresh = &cpus[cpu].threshold[FREQ_THRESHOLD_HIGH];
 		low_thresh = &cpus[cpu].threshold[FREQ_THRESHOLD_LOW];
-
-        limit_hi_thresh = &cpus[cpu].threshold[LIMIT_FREQ_THRESHOLD_HIGH];
-        limit_low_thresh = &cpus[cpu].threshold[LIMIT_FREQ_THRESHOLD_LOW];
-
 		hi_thresh->temp = msm_thermal_info.freq_mitig_temp_degc;
 		hi_thresh->trip = THERMAL_TRIP_CONFIGURABLE_HI;
-
-        limit_hi_thresh->temp = msm_thermal_info.limit_temp_degC;
-        limit_hi_thresh->trip = THERMAL_TRIP_CONFIGURABLE_HI;
-
         low_thresh->temp = msm_thermal_info.freq_mitig_temp_degc - msm_thermal_info.freq_mitig_temp_hysteresis_degc;
 		low_thresh->trip = THERMAL_TRIP_CONFIGURABLE_LOW;
-
-        limit_low_thresh->temp = msm_thermal_info.limit_temp_degC - msm_thermal_info.temp_hysteresis_degC;
-        limit_low_thresh->trip = THERMAL_TRIP_CONFIGURABLE_LOW;
-
-		limit_hi_thresh->notify = hi_thresh->notify = low_thresh->notify = freq_mitigation_notify;
-		limit_hi_thresh->data = hi_thresh->data = low_thresh->data = (void *)&cpus[cpu];
+		hi_thresh->notify = low_thresh->notify = freq_mitigation_notify;
+		hi_thresh->data = low_thresh->data = (void *)&cpus[cpu];
 
 		sensor_mgr_set_threshold(cpus[cpu].sensor_id, hi_thresh);
 	}
@@ -3583,7 +3569,6 @@ static __ref int do_thermal_monitor(void *data)
 			;
 		INIT_COMPLETION(thermal_monitor_complete);
 
-        pr_notice("\n");
 		mutex_lock(&threshold_mutex);
 		list_for_each_entry(thresholds, &thresholds_list, list_ptr) {
 			if (!thresholds->thresh_triggered)
