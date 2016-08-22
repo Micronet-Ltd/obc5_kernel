@@ -791,7 +791,6 @@ void cpufreq_sysfs_remove_file(const struct attribute *attr)
 EXPORT_SYMBOL(cpufreq_sysfs_remove_file);
 
 /* symlink affected CPUs */
-#if !defined (CONFIG_HOTPLUG_CPU)
 static int cpufreq_add_dev_symlink(struct cpufreq_policy *policy)
 {
 	unsigned int j;
@@ -812,17 +811,6 @@ static int cpufreq_add_dev_symlink(struct cpufreq_policy *policy)
 	}
 	return ret;
 }
-#else
-static int cpufreq_add_dev_symlink(struct cpufreq_policy *policy)
-{
-//    struct device *cpu_dev;
-
-//    cpu_dev = get_cpu_device(policy->cpu);
-//    return sysfs_create_link(&cpu_dev->kobj, &policy->kobj, "cpufreq");
-
-    return 0;
-}
-#endif
 
 static int cpufreq_add_dev_interface(struct cpufreq_policy *policy,
 				     struct device *dev)
@@ -1022,7 +1010,7 @@ static void update_policy_cpu(struct cpufreq_policy *policy, unsigned int cpu)
 }
 
 static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
-			     bool frozen, bool hotplug)
+			     bool frozen)
 {
 	unsigned int j, cpu = dev->id;
 	int ret = -ENOMEM;
@@ -1044,7 +1032,7 @@ static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
 	policy = cpufreq_cpu_get(cpu);
 	if (unlikely(policy)) {
 		cpufreq_cpu_put(policy);
-		pr_notice("failure CPU %u\n", cpu);
+		pr_notice("already exist CPU %u\n", cpu);
 		return 0;
 	}
 #endif
@@ -1054,19 +1042,17 @@ static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
 
 #ifdef CONFIG_HOTPLUG_CPU
 	/* Check if this cpu was hot-unplugged earlier and has siblings */
-    if (hotplug) {
-        read_lock_irqsave(&cpufreq_driver_lock, flags); 
-        list_for_each_entry(tpolicy, &cpufreq_policy_list, policy_list) {
-            if (cpumask_test_cpu(cpu, tpolicy->related_cpus)) {
-                read_unlock_irqrestore(&cpufreq_driver_lock, flags);
+	read_lock_irqsave(&cpufreq_driver_lock, flags);
+	list_for_each_entry(tpolicy, &cpufreq_policy_list, policy_list) {
+		if (cpumask_test_cpu(cpu, tpolicy->related_cpus)) {
+			read_unlock_irqrestore(&cpufreq_driver_lock, flags);
                 pr_notice("CPU %u has plugged\n", cpu);
-                ret = cpufreq_add_policy_cpu(tpolicy, cpu, dev);
-                up_read(&cpufreq_rwsem);
-                return ret;
-            }
-        }
-        read_unlock_irqrestore(&cpufreq_driver_lock, flags);
-    }
+			ret = cpufreq_add_policy_cpu(tpolicy, cpu, dev);
+			up_read(&cpufreq_rwsem);
+			return ret;
+		}
+	}
+	read_unlock_irqrestore(&cpufreq_driver_lock, flags);
 #endif
 
 	if (frozen)
@@ -1162,11 +1148,11 @@ static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
 	cpufreq_init_policy(policy);
 
 	write_lock_irqsave(&cpufreq_driver_lock, flags);
-//	for_each_cpu(j, policy->cpus) {
-//        per_cpu(cpufreq_cpu_data, j) = policy;
-//    }
-    per_cpu(cpufreq_cpu_data, policy->cpu) = policy;
-    pr_notice("init policy CPU %u [%p]\n", policy->cpu, policy);
+	for_each_cpu(j, policy->cpus) {
+        per_cpu(cpufreq_cpu_data, j) = policy;
+    }
+//    per_cpu(cpufreq_cpu_data, policy->cpu) = policy;
+//    pr_notice("init policy CPU %u [%p]\n", policy->cpu, policy);
 	write_unlock_irqrestore(&cpufreq_driver_lock, flags);
 
 	kobject_uevent(&policy->kobj, KOBJ_ADD);
@@ -1207,7 +1193,7 @@ nomem_out:
  */
 static int cpufreq_add_dev(struct device *dev, struct subsys_interface *sif)
 {
-	return __cpufreq_add_dev(dev, sif, false, 0);
+	return __cpufreq_add_dev(dev, sif, false);
 }
 
 static int cpufreq_nominate_new_policy_cpu(struct cpufreq_policy *policy,
@@ -1278,7 +1264,7 @@ static int __cpufreq_remove_dev_prepare(struct device *dev,
 			policy->governor->name, CPUFREQ_NAME_LEN);
 	per_cpu(cpufreq_policy_save, cpu).min = policy->user_policy.min;
 	per_cpu(cpufreq_policy_save, cpu).max = policy->user_policy.max;
-	pr_debug("Saving CPU%d user policy min %d and max %d\n",
+	pr_notice("Saving CPU%d user policy min %d and max %d\n",
 		 cpu, policy->user_policy.min, policy->user_policy.max);
 #endif
 
@@ -2021,6 +2007,7 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 
 	if (new_policy->min > policy->user_policy.max
 	    || new_policy->max < policy->user_policy.min) {
+        pr_notice("cpu%u invalid freq\n", policy->cpu);
 		ret = -EINVAL;
 		goto error_out;
 	}
@@ -2178,7 +2165,7 @@ static int cpufreq_cpu_callback(struct notifier_block *nfb,
 
 		switch (action & ~CPU_TASKS_FROZEN) {
 		case CPU_ONLINE:
-			__cpufreq_add_dev(dev, NULL, frozen, 1);
+			__cpufreq_add_dev(dev, NULL, frozen);
 			cpufreq_update_policy(cpu);
 			break;
 
@@ -2191,7 +2178,7 @@ static int cpufreq_cpu_callback(struct notifier_block *nfb,
 			break;
 
 		case CPU_DOWN_FAILED:
-			__cpufreq_add_dev(dev, NULL, frozen, 1);
+			__cpufreq_add_dev(dev, NULL, frozen);
 			break;
 		}
 	}

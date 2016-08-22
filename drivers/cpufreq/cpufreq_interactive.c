@@ -690,6 +690,7 @@ static int cpufreq_interactive_speedchange_task(void *data)
 
 			if (max_freq != pcpu->policy->cur) {
                 if (cpu_online(cpu)) {
+                    //pr_notice("cpu[%u] %u Hz\n", cpu, max_freq);
                     __cpufreq_driver_target(pcpu->policy,
                                 max_freq,
                                 CPUFREQ_RELATION_H);
@@ -1672,7 +1673,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
             if (cpu_online(j)) {
                 cpufreq_interactive_timer_start(tunables, j);
             } else {
-//                cpufreq_interactive_timer_start(tunables, 0);
 //                cpufreq_interactive_timer(0);
                 pr_notice("CPUFREQ_GOV_START: cpu%d offline\n", j);
             }
@@ -1703,10 +1703,9 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 
     case CPUFREQ_GOV_LIMITS:
         if (cpu_online(policy->cpu))
-		__cpufreq_driver_target(policy,
-				policy->cur, CPUFREQ_RELATION_L);
+            __cpufreq_driver_target(policy, policy->cur, CPUFREQ_RELATION_L);
         else {
-            pr_notice("CPUFREQ_GOV_LIMITS: cpu%d offline target not set\n", policy->cpu);
+            pr_notice("CPUFREQ_GOV_LIMITS: cpu%d offline; target not set\n", policy->cpu);
         }
 
 		for_each_cpu(j, policy->cpus) {
@@ -1742,7 +1741,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
                 if (cpu_online(j)) {
                     cpufreq_interactive_timer_resched(j);
                 } else {
-//                    cpufreq_interactive_timer_resched(0);
 //                    cpufreq_interactive_timer(0);
                     pr_notice("CPUFREQ_GOV_LIMITS: cpu%d offline, timer not rescheduled\n", j);
                 }

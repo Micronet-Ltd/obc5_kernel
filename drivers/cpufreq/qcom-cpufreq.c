@@ -54,7 +54,7 @@ static DEFINE_PER_CPU(struct cpufreq_suspend_t, cpufreq_suspend);
 static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 			unsigned int index)
 {
-	int ret = 0;
+	int ret = 0, i;
 	struct cpufreq_freqs freqs;
 	unsigned long rate;
 
@@ -68,11 +68,16 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 
 	rate = new_freq * 1000;
 	rate = clk_round_rate(cpu_clk[policy->cpu], rate);
-	ret = clk_set_rate(cpu_clk[policy->cpu], rate);
-	if (!ret) {
-//        pr_notice("cpu%d, %u ---> %u\n", policy->cpu, new_freq, cpu_freqs[policy->cpu].freq);
-	}
-    cpu_freqs[policy->cpu].freq = new_freq;
+
+    for_each_possible_cpu(i) {
+        if (cpu_online(i)) {
+            ret = clk_set_rate(cpu_clk[i], rate); 
+            cpu_freqs[i].freq = new_freq;
+        }
+        if (!ret) {
+//            pr_notice("cpu%d, %u ---> %u\n", i, new_freq, cpu_freqs[i].freq);
+        }
+    }
     cpufreq_notify_transition(policy, &freqs, CPUFREQ_POSTCHANGE);
     trace_cpu_frequency_switch_end(policy->cpu);
 
@@ -213,7 +218,7 @@ static int msm_cpufreq_init(struct cpufreq_policy *policy)
 
 	pr_notice("cpu%u init at %d switching to %u\n",
 			policy->cpu, cur_freq, table[index].frequency);
-	cpu_freqs[policy->cpu].freq = policy->cur = table[index].frequency;
+	policy->cur = table[index].frequency;
 	cpufreq_frequency_table_get_attr(table, policy->cpu);
 
 	return 0;
