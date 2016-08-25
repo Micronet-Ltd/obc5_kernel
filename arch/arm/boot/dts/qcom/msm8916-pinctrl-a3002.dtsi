@@ -184,7 +184,7 @@
 				bias-disable;
 			};
 		};
-/*		
+
 		urgent_shut_down {
 			qcom,pins = <&gp 91>;
 			qcom,num-grp-pins = <1>;
@@ -195,7 +195,7 @@
 				bias-disable;
 			};
 		};
-*/		
+
 		watchdog_pin_active {
 			qcom,pins = <&gp 2>;
 			qcom,num-grp-pins = <1>;
