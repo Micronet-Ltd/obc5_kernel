@@ -11,6 +11,8 @@
  *
  */
 
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
+
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/init.h>
@@ -24,6 +26,7 @@
 #include <linux/delay.h>
 #include <linux/qpnp/power-on.h>
 #include <linux/of_address.h>
+#include <linux/of_gpio.h>
 
 #include <asm/cacheflush.h>
 #include <asm/system_misc.h>
@@ -61,6 +64,10 @@ static void *dload_mode_addr;
 static bool dload_mode_enabled;
 static void *emergency_dload_mode_addr;
 static bool scm_dload_supported;
+static int a8_shutdown_pin = -1;
+static int a8_status_pulse_level = 1;
+static int a8_on_pulse_width = 100;
+static int a8_off_pulse_width = 50;
 
 static int dload_set(const char *val, struct kernel_param *kp);
 static int download_mode = 0;
@@ -299,6 +306,7 @@ static void deassert_ps_hold(void)
 		.arginfo = SCM_ARGS(1),
 	};
 
+//    pr_notice("....\n");
 	if (scm_deassert_ps_hold_supported) {
 		/* This call will be available on ARMv8 only */
 		scm_call2_atomic(SCM_SIP_FNID(SCM_SVC_PWR,
@@ -373,6 +381,14 @@ static void do_msm_poweroff(void)
 		pr_err("Failed to disable wdog debug: %d\n", ret);
 
 	halt_spmi_pmic_arbiter();
+
+    pr_notice("Bye bye...\n");
+    if (-1 != a8_shutdown_pin) {
+        __gpio_set_value(a8_shutdown_pin, a8_status_pulse_level); 
+        mdelay(a8_off_pulse_width);
+    //    __gpio_set_value(a8_shutdown_pin, a8_status_pulse_level^1);
+    }
+
 	deassert_ps_hold();
 
 	mdelay(10000);
@@ -423,8 +439,58 @@ static int msm_restart_probe(struct platform_device *pdev)
 			goto err_restart_reason;
 		}
 	}
+    pr_notice("restart reason [%x]\n", *(uint32_t *)restart_reason);
 
-	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+    np = dev->of_node;
+    if (np) {
+        int err, val;
+
+        val = of_get_named_gpio(np,"a8,status-pin",0);
+        if (gpio_is_valid(val)) {
+            do {
+                err = devm_gpio_request(dev, val, "a8_shutdown");	
+                if (err < 0) {
+                    pr_notice("failure to request the gpio[%d]\n", val);
+                    break;
+                }
+
+                a8_shutdown_pin = val;
+
+                err = of_property_read_u32(np, "a8,status-level", &val); 
+                if (err < 0) {
+                    pr_notice("invalid status level, use default [%d]\n", a8_status_pulse_level);
+                } else {
+                    a8_status_pulse_level = val;
+                }
+
+                err = of_property_read_u32(np, "a8,on-pulse-width", &val);
+                if (err < 0) {
+                    pr_notice("invalid status power on pulse width, use default [%d]\n", a8_on_pulse_width);
+                } else {
+                    a8_on_pulse_width = val;
+                }
+
+                err = of_property_read_u32(np, "a8,off-pulse-width", &val);
+                if (err < 0) {
+                    pr_notice("invalid status power off pulse width, use default [%d]\n", a8_off_pulse_width);
+                } else {
+                    a8_off_pulse_width = val;
+                }
+
+                gpio_direction_output(a8_shutdown_pin, a8_status_pulse_level^1);
+                mdelay(10);
+                __gpio_set_value(a8_shutdown_pin, a8_status_pulse_level);
+                mdelay(a8_on_pulse_width);
+                __gpio_set_value(a8_shutdown_pin, a8_status_pulse_level^1);
+            } while (0);
+        } else {
+            pr_notice("invalid a8 status pin [%d]\n", val);
+        }
+    } else {
+        pr_notice("qcom,pshold node doesn't exist\n");
+    }
+
+    mem = platform_get_resource(pdev, IORESOURCE_MEM, 0); 
 	msm_ps_hold = devm_ioremap_resource(dev, mem);
 	if (IS_ERR(msm_ps_hold))
 		return PTR_ERR(msm_ps_hold);
@@ -442,7 +508,9 @@ static int msm_restart_probe(struct platform_device *pdev)
 	if (scm_is_call_available(SCM_SVC_PWR, SCM_IO_DEASSERT_PS_HOLD) > 0)
 		scm_deassert_ps_hold_supported = true;
 
-	set_dload_mode(download_mode);
+    pr_notice("scm deassert ps_hold support[%d]\n", scm_deassert_ps_hold_supported);
+
+    set_dload_mode(download_mode);
 
 	return 0;
 

@@ -358,10 +358,7 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&obc_watchdog_pin>;		
 		ehang,toggle-pin = <&msm_gpio 2 0>;
-		ehang,suspend-state-pin = <&msm_gpio 91 0>;
 		ehang,rf-kill-pin = <&msm_gpio 9 0>;
-		/*ehang,port-det-pin = <&msm_gpio 69 0>;
-		ehang,usb-switch-pin = <&msm_gpio 15 0>;*/
 		ehang,high-delay=<1000>;
 		ehang,low-delay=<5000>;
 	};
