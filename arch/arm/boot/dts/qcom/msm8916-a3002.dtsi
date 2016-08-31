@@ -608,6 +608,7 @@
 #include "dsi-panel-lead-otm1284-cpt-720p-video.dtsi"
 #include "dsi-panel-h8394d-txd-innolux5p5-hd-video.dtsi"
 #include "dsi-panel-h8394f-jd-auo5p5-hd-video.dtsi"
+#include "dsi-panel-truly-wvga-video.dtsi"
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
@@ -619,7 +620,7 @@
 };
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_h8394d_txd_innolux5p5_hd_vid>;
+	qcom,dsi-pref-prim-pan = <&dsi_truly_wvga_vid>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active>;
 	pinctrl-1 = <&mdss_dsi_suspend>;
