@@ -28,7 +28,6 @@
 
 struct watch_dog_pin_info{
 	int toggle_pin;
-	int suspend_state_pin;
 	int port_det_pin;
 	int usb_switch_pin;	
 	int high_delay;
@@ -70,16 +69,12 @@ static void watchdog_toggle_work(struct work_struct *work)
 	struct watch_dog_pin_info *inf =
 		container_of(work, struct watch_dog_pin_info,
 				toggle_work.work);
+    unsigned long d;
 
-	if(0!=inf->state){
-		gpio_set_value(inf->toggle_pin,1);
-		schedule_delayed_work(&inf->toggle_work,msecs_to_jiffies(inf->high_delay));
-		inf->state=0;
-		return;
-	}
-	gpio_set_value(inf->toggle_pin,0);
-	schedule_delayed_work(&inf->toggle_work,msecs_to_jiffies(inf->low_delay));
-	inf->state=1;
+    inf->state ^= 1;
+    d = (inf->state)?inf->high_delay:inf->low_delay;
+    gpio_set_value(inf->toggle_pin, inf->state);
+    schedule_delayed_work(&inf->toggle_work,msecs_to_jiffies(d));
 }
 
 static irqreturn_t port_det_handler(int irq, void *dev_id)
@@ -121,15 +116,6 @@ static int watchdog_pin_probe(struct platform_device *op)
 		return -ENOMEM;			
 	}
 	gpio_direction_output(inf->toggle_pin,0);
-
-	inf->suspend_state_pin=
-		of_get_named_gpio(np,"ehang,suspend-state-pin",0);
-	if(gpio_is_valid(inf->suspend_state_pin)){
-		rc=devm_gpio_request(dev,inf->suspend_state_pin,"watchdog_state");	
-		if(rc<0)
-			dev_err(dev, "state pin is busy!\n");		
-		gpio_direction_output(inf->suspend_state_pin,1);
-	}
 
 	inf->port_det_pin=
 		of_get_named_gpio(np,"ehang,port-det-pin",0);
@@ -177,13 +163,14 @@ static int watchdog_pin_probe(struct platform_device *op)
 		inf->low_delay=1000;	
 
 	dev_set_drvdata(dev, inf);
+
+    inf->state=0;
 	
 	INIT_DELAYED_WORK(&inf->toggle_work,
 					watchdog_toggle_work);
 
 	schedule_delayed_work(&inf->toggle_work,
 		msecs_to_jiffies(inf->low_delay));	
-	inf->state=1;
 
 	proc_create("rfkillpin", S_IRUSR | S_IRGRP | S_IROTH, NULL, &proc_rfkill_operations);
 	return 0;
@@ -196,23 +183,11 @@ static int watchdog_pin_remove(struct platform_device *op)
 
 static int watchdog_pin_suspend(struct platform_device *op, pm_message_t message)
 {
-	struct device *dev = &op->dev;
-	struct watch_dog_pin_info *inf;
-
-	inf=dev_get_drvdata(dev);
-	if(gpio_is_valid(inf->suspend_state_pin))
-		gpio_set_value(inf->suspend_state_pin,0);
 	return 0;
 }
 
 static int watchdog_pin_resume(struct platform_device *op)
 {
-	struct device *dev = &op->dev;
-	struct watch_dog_pin_info *inf;
-
-	inf=dev_get_drvdata(dev);
-	if(gpio_is_valid(inf->suspend_state_pin))
-		gpio_set_value(inf->suspend_state_pin,1);
 	return 0;
 }
 

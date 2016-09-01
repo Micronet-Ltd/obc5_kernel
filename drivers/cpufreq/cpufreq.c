@@ -15,7 +15,8 @@
  * published by the Free Software Foundation.
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+//#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
 
 #include <linux/cpu.h>
 #include <linux/cpufreq.h>
@@ -316,6 +317,7 @@ static void __cpufreq_notify_transition(struct cpufreq_policy *policy,
 		srcu_notifier_call_chain(&cpufreq_transition_notifier_list,
 				CPUFREQ_POSTCHANGE, freqs);
 		if (likely(policy) && likely(policy->cpu == freqs->cpu)) {
+//            pr_notice("CPUFREQ_POSTCHANGE cpu[%lu] %lu Hz\n", (unsigned long)freqs->cpu, (unsigned long)freqs->new);
 			policy->cur = freqs->new;
 			sysfs_notify(&policy->kobj, NULL, "scaling_cur_freq");
 		}
@@ -1022,7 +1024,7 @@ static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
 	if (cpu_is_offline(cpu))
 		return 0;
 
-	pr_debug("adding CPU %u\n", cpu);
+	pr_notice("adding CPU %u\n", cpu);
 
 #ifdef CONFIG_SMP
 	/* check whether a different CPU already registered this
@@ -1030,6 +1032,7 @@ static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
 	policy = cpufreq_cpu_get(cpu);
 	if (unlikely(policy)) {
 		cpufreq_cpu_put(policy);
+		pr_notice("already exist CPU %u\n", cpu);
 		return 0;
 	}
 #endif
@@ -1043,6 +1046,7 @@ static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
 	list_for_each_entry(tpolicy, &cpufreq_policy_list, policy_list) {
 		if (cpumask_test_cpu(cpu, tpolicy->related_cpus)) {
 			read_unlock_irqrestore(&cpufreq_driver_lock, flags);
+                pr_notice("CPU %u has plugged\n", cpu);
 			ret = cpufreq_add_policy_cpu(tpolicy, cpu, dev);
 			up_read(&cpufreq_rwsem);
 			return ret;
@@ -1144,8 +1148,11 @@ static int __cpufreq_add_dev(struct device *dev, struct subsys_interface *sif,
 	cpufreq_init_policy(policy);
 
 	write_lock_irqsave(&cpufreq_driver_lock, flags);
-	for_each_cpu(j, policy->cpus)
-		per_cpu(cpufreq_cpu_data, j) = policy;
+	for_each_cpu(j, policy->cpus) {
+        per_cpu(cpufreq_cpu_data, j) = policy;
+    }
+//    per_cpu(cpufreq_cpu_data, policy->cpu) = policy;
+//    pr_notice("init policy CPU %u [%p]\n", policy->cpu, policy);
 	write_unlock_irqrestore(&cpufreq_driver_lock, flags);
 
 	kobject_uevent(&policy->kobj, KOBJ_ADD);
@@ -1225,7 +1232,7 @@ static int __cpufreq_remove_dev_prepare(struct device *dev,
 	unsigned long flags;
 	struct cpufreq_policy *policy;
 
-	pr_debug("%s: unregistering CPU %u\n", __func__, cpu);
+	pr_notice("unregistering CPU %u\n", cpu);
 
 	write_lock_irqsave(&cpufreq_driver_lock, flags);
 
@@ -1257,7 +1264,7 @@ static int __cpufreq_remove_dev_prepare(struct device *dev,
 			policy->governor->name, CPUFREQ_NAME_LEN);
 	per_cpu(cpufreq_policy_save, cpu).min = policy->user_policy.min;
 	per_cpu(cpufreq_policy_save, cpu).max = policy->user_policy.max;
-	pr_debug("Saving CPU%d user policy min %d and max %d\n",
+	pr_notice("Saving CPU%d user policy min %d and max %d\n",
 		 cpu, policy->user_policy.min, policy->user_policy.max);
 #endif
 
@@ -1338,6 +1345,12 @@ static int __cpufreq_remove_dev_finish(struct device *dev,
 
 		if (!frozen)
 			cpufreq_policy_free(policy);
+
+        // Vladimir
+        // TODO: expand this to every policy
+        //do {
+        //    policy = per_cpu(cpufreq_cpu_data, cpu);
+        //} while(last policy);
 	} else {
 		if (has_target()) {
 			if ((ret = __cpufreq_governor(policy, CPUFREQ_GOV_START)) ||
@@ -1347,6 +1360,7 @@ static int __cpufreq_remove_dev_finish(struct device *dev,
 				return ret;
 			}
 		}
+//        kfree(policy);
 	}
 
 	return 0;
@@ -1993,6 +2007,7 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 
 	if (new_policy->min > policy->user_policy.max
 	    || new_policy->max < policy->user_policy.min) {
+        pr_notice("cpu%u invalid freq\n", policy->cpu);
 		ret = -EINVAL;
 		goto error_out;
 	}
@@ -2241,7 +2256,7 @@ int cpufreq_register_driver(struct cpufreq_driver *driver_data)
 		}
 	}
 
-	pr_debug("driver %s up and running\n", driver_data->name);
+	pr_notice("driver %s up and running\n", driver_data->name);
 
 	return 0;
 err_if_unreg:
