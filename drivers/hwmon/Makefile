@@ -151,3 +151,4 @@ obj-$(CONFIG_PMBUS)		+= pmbus/
 ccflags-$(CONFIG_HWMON_DEBUG_CHIP) := -DDEBUG
 # by skj
 obj-$(CONFIG_WATCHDOG_HEARTBEAT_GPIO) += watch_dog_gpio.o
+obj-y += a8_power_lost_detect.o

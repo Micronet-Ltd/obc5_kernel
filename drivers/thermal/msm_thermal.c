@@ -1116,6 +1116,7 @@ static int check_freq_table(void)
         pr_notice("%8u Hz\n", table[i].frequency);
     }
 //    limit_idx_low ++;
+//    limit_idx_low = limit_idx_high - 1;
 
 	if (limit_idx_high < 0 || limit_idx_high < limit_idx_low) {
 		invalid_table = true;
