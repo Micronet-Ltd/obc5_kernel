@@ -29,7 +29,7 @@
 #include <linux/of.h>
 #include <linux/err.h>
 #include <linux/slab.h>
-#include <linux/of.h>
+//#include <linux/of.h>
 #include <linux/sysfs.h>
 #include <linux/types.h>
 #include <linux/thermal.h>

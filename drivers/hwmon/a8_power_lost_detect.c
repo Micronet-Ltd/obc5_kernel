@@ -22,22 +22,24 @@
 #define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
 
 #include "../../../out/target/product/msm8916_64/obj/KERNEL_OBJ/include/generated/autoconf.h"
+#include <linux/kernel.h>
+#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/device.h>
+#include <linux/cpu.h>
 #include <linux/platform_device.h>
+#include <linux/of.h>
+#include <linux/of_gpio.h>
 #include <linux/err.h>
 #include <linux/slab.h>
-#include <linux/init.h>
-#include <linux/kernel.h>
 #include <linux/hwmon.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/delay.h>
-//#include <linux/cpu.h>
+#include <linux/reboot.h>
 //#include <linux/cpufreq.h>
-#include <linux/of.h>
-#include <linux/of_gpio.h>
 
+#undef DEBUG_POWER_LOST
 #define DEBUG_POWER_LOST 1
 
 enum {
@@ -77,6 +79,7 @@ struct a8_power_lost_detect_info {
     struct a8_power_lost_hmon_attr attr_wlan_d;
     struct a8_power_lost_hmon_attr attr_off_d;
 #if defined (DEBUG_POWER_LOST)
+    int dbg_lvl;
     struct a8_power_lost_hmon_attr attr_ps;
 #endif
 };
@@ -93,7 +96,7 @@ static ssize_t a8_power_lost_ps_show(struct device *dev, struct device_attribute
 {
     struct a8_power_lost_detect_info *pwrl = dev_get_drvdata(dev);
 
-    return sprintf(buf, "%d\n", pwrl->pwr_lost_ps);
+    return sprintf(buf, "%d\n", pwrl->dbg_lvl);
 
 }
 
@@ -106,8 +109,11 @@ static ssize_t a8_power_lost_ps_store(struct device *dev, struct device_attribut
         return -EINVAL;
 
     spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
-    pwrl->pwr_lost_ps = val;
+    pwrl->dbg_lvl = val;
+    pwrl->pwr_lost_timer = ktime_to_ms(ktime_get());
     spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+
+    schedule_delayed_work(&pwrl->pwr_lost_work, 0);
 
     return count;
 }
@@ -260,7 +266,6 @@ EXPORT_SYMBOL(touch_click_notify_register);
 
 
 #include <linux/syscalls.h>
-#include <linux/reboot.h>
 #include <linux/suspend.h>
 #include <linux/namei.h>
 #include <linux/io.h>
@@ -292,15 +297,18 @@ static struct notifier_block __refdata msm_thermal_cpu_notifier = {
 
 #endif
 
-static void a8_power_lost_detect_work(struct work_struct *work)
+static void __ref a8_power_lost_detect_work(struct work_struct *work)
 {
-    int val;//, err;
+    int val, err;
     long long timer;
 	struct a8_power_lost_detect_info *pwrl = container_of(work, struct a8_power_lost_detect_info, pwr_lost_work.work);
 
     spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
     timer = ktime_to_ms(ktime_get());
     val = __gpio_get_value(pwrl->pwr_lost_pin);
+#if defined (DEBUG_POWER_LOST)
+    val |= pwrl->dbg_lvl;
+#endif
 
     if (pwrl->pwr_lost_ps == e_pwrl_unspecified) {
         // restore display and lights power state
@@ -308,21 +316,27 @@ static void a8_power_lost_detect_work(struct work_struct *work)
             pwrl->pwr_lost_ps = e_pwrl_display_off;
             pr_notice("power lost %lld\n", timer);
             pr_notice("shutdown display %lld\n", ktime_to_ms(ktime_get()));
+            power_lost_notify(1, 0);
             timer = 0;
         } else {
             pr_notice("power restored %lld\n", timer);
             spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
-//            for_each_possible_cpu(val) {
-//                if (cpu_online(val))
-//                    continue;
-//                err = cpu_up(val);
-//                if (err && err == notifier_to_errno(NOTIFY_BAD))
-//                    pr_notice("up cpu%d is declined\n", val);
-//                else if (err)
-//                    pr_err("failure to up cpu%d. err:%d\n", val, err);
-//                else
-//                    pr_notice("up cpu%d\n", val);
-//            }
+            for (val = num_possible_cpus(); val > 0; val--) {
+                if (0 == val || cpu_online(val))
+                    continue;
+#if defined (CONFIG_SMP)
+                spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+                err = cpu_up(val);
+                spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+                if (err && err == notifier_to_errno(NOTIFY_BAD))
+                    pr_notice("up cpu%d is declined\n", val);
+                else if (err)
+                    pr_err("failure to up cpu%d. err:%d\n", val, err);
+                else
+                    pr_notice("up cpu%d\n", val);
+#endif
+            }
+            power_lost_notify(0, 0);
             enable_irq(pwrl->pwr_lost_irq);
             return;
         }
@@ -338,6 +352,21 @@ static void a8_power_lost_detect_work(struct work_struct *work)
         if (pwrl->pwr_lost_pin_level == val) {
             pr_notice("shutdown cores %lld\n", ktime_to_ms(ktime_get()));
             pwrl->pwr_lost_ps = e_pwrl_cores_off;
+            //cpu_hotplug_driver_lock();
+            for (val = num_possible_cpus(); val > 0; val--) {
+                if (!cpu_online(val))
+                    continue;
+#if defined (CONFIG_SMP)
+                spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+                err = cpu_down(val);
+                spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+                if (err)
+                    pr_err("Unable shutdown cpu%d [%d]\n", val, err);
+                else
+                    pr_notice("shutdown cpu%d\n", val);
+#endif
+            }
+            //cpu_hotplug_driver_unlock();
         } else {
             pwrl->pwr_lost_ps = e_pwrl_unspecified;
         }
@@ -359,94 +388,56 @@ static void a8_power_lost_detect_work(struct work_struct *work)
                 pr_notice("device may be shutdown %lld\n", ktime_to_ms(ktime_get()));
             }
             timer = val;
-            val = 0;
-//            for_each_possible_cpu(val) {
-//                if (!cpu_online(val))
-//                    continue;
-//                err = cpu_down(val);
-//                if (err)
-//                    pr_err("Unable shutdown cpu%d [%d]\n", val, err);
-//                else
-//                    pr_notice("shutdown cpu%d\n", val);
-//            }
         } else {
             pwrl->pwr_lost_ps = e_pwrl_unspecified;
             timer = 0;
         }
+    } else if (pwrl->pwr_lost_ps == e_pwrl_wan_off) {
+        pr_notice("shutdown wan %lld\n", ktime_to_ms(ktime_get()));
+
+        if (pwrl->pwr_lost_wlan_delay > (ktime_to_ms(ktime_get()) - pwrl->pwr_lost_timer)) {
+            val = pwrl->pwr_lost_timer + pwrl->pwr_lost_wlan_delay - ktime_to_ms(ktime_get());
+            pwrl->pwr_lost_ps = e_pwrl_wlan_off;
+            pr_notice("wlan may be shutdown %lld\n", ktime_to_ms(ktime_get()));
+        } else {
+            pr_notice("device may be shutdown %lld\n", ktime_to_ms(ktime_get()));
+            if (pwrl->pwr_lost_off_delay > (ktime_to_ms(ktime_get()) - pwrl->pwr_lost_timer)) {
+                val = pwrl->pwr_lost_timer + pwrl->pwr_lost_off_delay - ktime_to_ms(ktime_get());
+            } else {
+                val = 0;
+            }
+            pwrl->pwr_lost_ps = e_pwrl_device_off;
+        }
+        timer = val;
+    } else if (pwrl->pwr_lost_ps == e_pwrl_wlan_off) {
+        pr_notice("shutdown wlan %lld\n", ktime_to_ms(ktime_get()));
+
+        if (pwrl->pwr_lost_wan_delay > (ktime_to_ms(ktime_get()) - pwrl->pwr_lost_timer)) {
+            val = pwrl->pwr_lost_timer + pwrl->pwr_lost_wan_delay - ktime_to_ms(ktime_get());
+            pwrl->pwr_lost_ps = e_pwrl_wan_off;
+            pr_notice("wan may be shutdown %lld\n", ktime_to_ms(ktime_get()));
+        } else {
+            pr_notice("device may be shutdown %lld\n", ktime_to_ms(ktime_get()));
+            if (pwrl->pwr_lost_off_delay > (ktime_to_ms(ktime_get()) - pwrl->pwr_lost_timer)) {
+                val = pwrl->pwr_lost_timer + pwrl->pwr_lost_off_delay - ktime_to_ms(ktime_get());
+            } else {
+                val = 0;
+            }
+            pwrl->pwr_lost_ps = e_pwrl_device_off;
+        }
+        timer = val;
+    } else if (pwrl->pwr_lost_ps == e_pwrl_device_off) {
+        pr_notice("urgent shutdown device %lld\n", ktime_to_ms(ktime_get()));
+        orderly_poweroff(1);
+        spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+        return;
     } else {
-#if 0
-        if (pwrl->pwr_lost_pin_level == val) {
-            pr_notice("shutdown cores %lld\n", ktime_to_ms(ktime_get()));
-            pwrl->pwr_lost_ps = e_pwrl_cores_off;
-            val = (pwrl->pwr_lost_wan_delay < pwrl->pwr_lost_wlan_delay)?pwrl->pwr_lost_wan_delay:pwrl->pwr_lost_wlan_delay;
-    //            val = (val < pwrl->pwr_lost_off_delay)?:pwrl->pwr_lost_off_delay;
-    //            timer += val;
-    //            spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
-    //            pwrl->pwr_lost_timer += val;
-    //            spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
-            timer = 0;
-        } else {
-            pwrl->pwr_lost_ps = e_pwrl_unspecified;
-            timer = 0;
-        }
-#endif
+        pr_notice("Oooops, bug, bug, bug %lld\n", ktime_to_ms(ktime_get()));
     }
     spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
     schedule_delayed_work(&pwrl->pwr_lost_work, (timer)?msecs_to_jiffies(timer): 0);
 #if 0
-	if (-1 == pld->pld_work_timer) {
-		if (user_path_at(AT_FDCWD, "/data", 0, &path)) {
-			printk("%s: system not ready; urgent shutdown %lld\n", __func__, ktime_to_ms(ktime_get()));
-			machine_power_off();
-        } else if (!pld->sys_ready) {
-            printk("%s: init doesn't done, urgent shutdown %lld\n", __func__, ktime_to_ms(ktime_get()));
-            dpm_dev_suspend("omapdss");
-
-            sys_sync();
-
-            sys_umount("/data", MNT_FORCE | MNT_DETACH);
-            sys_umount("/", MNT_FORCE | MNT_DETACH);
-
-            printk("%s: fs syncked %lld\n", __func__, ktime_to_ms(ktime_get()));
-            printk("%s: urgent shutdown %lld\n", __func__, ktime_to_ms(ktime_get()));
-            machine_power_off();
-        }
-        // interrupt just occurred
-		if (pld->ps != pwl_unspecified) {
-			printk("%s: oops - bug bug bug %lld\n", __func__, ktime_to_ms(ktime_get()));
-		}
-
-
-		pld->pld_work_timer = pld->pld_ignore_timer;
-		pld->ps = pwl_display_off;
-
 		dpm_dev_suspend("omapdss");//a300-panel");
-		// continue to wait
-	} else {
-		if(pld->ps == pwl_display_off) {
-			printk("%s: Shutdown fs %lld\n", __func__, ktime_to_ms(ktime_get()));
-
-			pld->pld_work_timer = pld->pld_usd_timer;
-			pld->ps = pwl_fs_off;
-
-			// do something here
-			if (user_path_at(AT_FDCWD, "/data", 0, &path))
-				printk("%s: impossible unmount partitions %lld\n", __func__, ktime_to_ms(ktime_get()));
-			else {
-				sys_sync();
-
-				sys_umount("/data", MNT_FORCE | MNT_DETACH);
-				sys_umount("/", MNT_FORCE | MNT_DETACH);
-
-				printk("%s: fs in safe mode %lld\n", __func__, ktime_to_ms(ktime_get()));
-			}
-		//} else {
-			printk("%s: urgent shutdown %lld\n", __func__, ktime_to_ms(ktime_get()));
-			//kernel_power_off();
-			machine_power_off();
-		}
-	}
-	mutex_unlock(&pld->work_lock);
 #endif
 }
 
