@@ -696,7 +696,7 @@ static int a8_power_lost_detect_probe(struct platform_device *pdev)
             pr_err("failure to request gpio[%d] irq\n", pwrl->pwr_lost_pin);
 		} else {
             err = devm_request_irq(dev, pwrl->pwr_lost_irq, a8_power_lost_detect_handler,
-                                   IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
+                                   IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
                                    pdev->name, pwrl);
             if (!err) {
                 disable_irq_nosync(pwrl->pwr_lost_irq);
