@@ -37,6 +37,8 @@
 #include <linux/irq.h>
 #include <linux/delay.h>
 #include <linux/reboot.h>
+#include <linux/syscalls.h>
+#include <linux/fcntl.h>
 //#include <linux/cpufreq.h>
 
 #undef DEBUG_POWER_LOST
@@ -209,7 +211,11 @@ static ssize_t a8_power_lost_wland_store(struct device *dev, struct device_attri
     int val;
     struct a8_power_lost_detect_info *pwrl = dev_get_drvdata(dev);
 
-    if (kstrtos32(buf, 10, &val))
+    if (!pwrl->sys_ready) {
+        return -EINVAL;
+    }
+
+    if (kstrtos32(buf, 10, &val)) 
         return -EINVAL;
 
     spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
@@ -265,7 +271,6 @@ EXPORT_SYMBOL(touch_click_notify_register);
 
 
 
-#include <linux/syscalls.h>
 #include <linux/suspend.h>
 #include <linux/namei.h>
 #include <linux/io.h>
@@ -296,6 +301,68 @@ static struct notifier_block __refdata msm_thermal_cpu_notifier = {
 
 
 #endif
+#if 0
+static int remount_ro_done(void)
+{
+    int f;
+    char mount_dev[256];
+    char mount_dir[256];
+    char mount_type[256];
+    char mount_opts[256];
+    int mount_freq;
+    int mount_passno;
+    int match;
+    int found_rw_fs = 0;
+
+    f = sys_open("/proc/mounts", "r");
+    if (! f) {
+        /* If we can't read /proc/mounts, just give up */
+        return 1;
+    }
+
+    do {
+        match = fscanf(f, "%255s %255s %255s %255s %d %d\n",
+                       mount_dev, mount_dir, mount_type,
+                       mount_opts, &mount_freq, &mount_passno);
+        mount_dev[255] = 0;
+        mount_dir[255] = 0;
+        mount_type[255] = 0;
+        mount_opts[255] = 0;
+        if ((match == 6) && !strncmp(mount_dev, "/dev/block", 10) && strstr(mount_opts, "rw,")) {
+            found_rw_fs = 1;
+            break;
+        }
+    } while (match != EOF);
+
+    fclose(f);
+
+    return !found_rw_fs;
+}
+#endif
+static void remount_ro(void)
+{
+    int fd, cnt = 0;
+
+    /* Trigger the remount of the filesystems as read-only,
+     * which also marks them clean.
+     */
+    fd = sys_open("/proc/sysrq-trigger", O_WRONLY, 0);
+    if (fd < 0) {
+        pr_notice("failure to open /proc/sysrq-trigger\n");
+        return;
+    }
+    sys_write(fd, "u", 1);
+    sys_close(fd);
+
+
+    /* Now poll /proc/mounts till it's done */
+    while (/*!remount_ro_done() && */(cnt < 64)) {
+        mdelay(10);
+        cnt++;
+    }
+
+    return;
+}
 
 static void __ref a8_power_lost_detect_work(struct work_struct *work)
 {
@@ -311,7 +378,6 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
 #endif
 
     if (pwrl->pwr_lost_ps == e_pwrl_unspecified) {
-        // restore display and lights power state
         if (pwrl->pwr_lost_pin_level == val) {
             pwrl->pwr_lost_ps = e_pwrl_display_off;
             pr_notice("power lost %lld\n", timer);
@@ -321,13 +387,11 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
         } else {
             pr_notice("power restored %lld\n", timer);
             spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
-            for (val = num_possible_cpus(); val > 0; val--) {
-                if (0 == val || cpu_online(val))
+            for (val = num_possible_cpus() - 1; val > 0; val--) {
+                if (cpu_online(val))
                     continue;
 #if defined (CONFIG_SMP)
-                spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
                 err = cpu_up(val);
-                spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
                 if (err && err == notifier_to_errno(NOTIFY_BAD))
                     pr_notice("up cpu%d is declined\n", val);
                 else if (err)
@@ -353,7 +417,7 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
             pr_notice("shutdown cores %lld\n", ktime_to_ms(ktime_get()));
             pwrl->pwr_lost_ps = e_pwrl_cores_off;
             //cpu_hotplug_driver_lock();
-            for (val = num_possible_cpus(); val > 0; val--) {
+            for (val = num_possible_cpus() - 1; val > 0; val--) {
                 if (!cpu_online(val))
                     continue;
 #if defined (CONFIG_SMP)
@@ -362,8 +426,8 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
                 spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
                 if (err)
                     pr_err("Unable shutdown cpu%d [%d]\n", val, err);
-                else
-                    pr_notice("shutdown cpu%d\n", val);
+//                else
+//                    pr_notice("shutdown cpu%d\n", val);
 #endif
             }
             //cpu_hotplug_driver_unlock();
@@ -427,9 +491,14 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
         }
         timer = val;
     } else if (pwrl->pwr_lost_ps == e_pwrl_device_off) {
+        spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+        pr_notice("urgent remount block devices ro %lld\n", ktime_to_ms(ktime_get()));
+        //sys_umount("/data", MNT_FORCE | MNT_DETACH);
+
+        sys_sync();
+        remount_ro();
         pr_notice("urgent shutdown device %lld\n", ktime_to_ms(ktime_get()));
         orderly_poweroff(1);
-        spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
         return;
     } else {
         pr_notice("Oooops, bug, bug, bug %lld\n", ktime_to_ms(ktime_get()));
@@ -477,6 +546,8 @@ static int a8_power_lost_detect_probe(struct platform_device *pdev)
         return -ENOMEM;
     }
 
+    pwrl->sys_ready = 0;
+    pwrl->dbg_lvl = 0;
     do {
         spin_lock_init(&pwrl->pwr_lost_lock);
 
@@ -639,9 +710,9 @@ static int a8_power_lost_detect_probe(struct platform_device *pdev)
 
 		pwrl->pwr_lost_timer = -1;
         pwrl->pwr_lost_ps = e_pwrl_unspecified;
-        pwrl->sys_ready = 0;
 
         schedule_delayed_work(&pwrl->pwr_lost_work, (pwrl->pwr_lost_off_delay)?msecs_to_jiffies(pwrl->pwr_lost_off_delay): 0);
+        pwrl->sys_ready = 1;
 
 		pr_notice("power lost detector registered (%d, %d)\n", pwrl->pwr_lost_pin, pwrl->pwr_lost_irq);
 
@@ -727,8 +798,8 @@ static int a8_power_lost_detect_remove(struct platform_device *pdev)
 
     cancel_delayed_work(&pwrl->pwr_lost_work);
     disable_irq_nosync(pwrl->pwr_lost_irq);
-    if (device_may_wakeup(&pdev->dev))
-        disable_irq_wake(pwrl->pwr_lost_irq);
+//    if (device_may_wakeup(&pdev->dev))
+//        disable_irq_wake(pwrl->pwr_lost_irq);
     device_wakeup_disable(&pdev->dev);
     devm_free_irq(&pdev->dev, pwrl->pwr_lost_irq, pwrl);
 
