@@ -72,6 +72,7 @@ struct a8_power_lost_detect_info {
     int pwr_lost_wlan_delay;
 	long long pwr_lost_timer;
     int sys_ready;
+    int remount_complete;
     spinlock_t pwr_lost_lock;
     unsigned long lock_flags;
 	struct delayed_work pwr_lost_work;
@@ -80,6 +81,8 @@ struct a8_power_lost_detect_info {
     struct a8_power_lost_hmon_attr attr_wan_d;
     struct a8_power_lost_hmon_attr attr_wlan_d;
     struct a8_power_lost_hmon_attr attr_off_d;
+    struct notifier_block a8_power_lost_cpu_notifier;
+    struct notifier_block a8_power_lost_remount_notifier;
 #if defined (DEBUG_POWER_LOST)
     int dbg_lvl;
     struct a8_power_lost_hmon_attr attr_ps;
@@ -237,70 +240,43 @@ void power_lost_notify(unsigned long reason, void *arg)
     raw_spin_unlock_irqrestore(&power_lost_chain_lock, flags);
 }
 
-#if 0
-int click_register_notifier(struct notifier_block *nb)
+int power_lost_register_notifier(struct notifier_block *nb)
 {
 	unsigned long flags;
     int err;
 
-	raw_spin_lock_irqsave(&click_lock, flags);
-	err = raw_notifier_chain_register(&click_chain, nb);
-	raw_spin_unlock_irqrestore(&click_lock, flags);
+	raw_spin_lock_irqsave(&power_lost_chain_lock, flags);
+	err = raw_notifier_chain_register(&power_lost_chain, nb);
+	raw_spin_unlock_irqrestore(&power_lost_chain_lock, flags);
 
 	return err;
 }
-EXPORT_SYMBOL(click_register_notifier);
+EXPORT_SYMBOL(power_lost_register_notifier);
 
-static int click_notifier(struct notifier_block *nb, unsigned long val, void *priv)
+#if 0
+// example notification using
+
+static int power_lost_notifier(struct notifier_block *nb, unsigned long val, void *priv)
 {
-	struct klight_leds_data *kl = container_of(nb, struct klight_leds_data, click_notifier);
-    unsigned long on = kl->click_on_timeot, off = 10;
+	struct <specific> *dev_specific = container_of(nb, struct <specific>, power_lost_notifier);
 
-    led_blink_set_oneshot(&kl->cdev, &on, &off, 0);
+    // Do something
+    //
 
 	return NOTIFY_OK;
 }
 
-extern int click_register_notifier(struct notifier_block *);
-void touch_click_notify_register(void)
-{
-    g_klight->click_notifier.notifier_call = click_notifier;
-    click_register_notifier(&g_klight->click_notifier);
-}
-EXPORT_SYMBOL(touch_click_notify_register);
+// In probe
+power_lost_register_notifier(<specific> *dev_specific->power_lost_notifier)
 
-
-
-#include <linux/suspend.h>
-#include <linux/namei.h>
-#include <linux/io.h>
 
 extern int dpm_dev_suspend(char *);
 extern int dpm_dev_resume(char *);
-		register_cpu_notifier(&msm_thermal_cpu_notifier);
-static int __ref msm_thermal_cpu_callback(struct notifier_block *nfb,
-		unsigned long action, void *hcpu)
-{
-	uint32_t cpu = (uintptr_t)hcpu;
-
-	if (action == CPU_UP_PREPARE || action == CPU_UP_PREPARE_FROZEN) {
-		if (core_control_enabled && (msm_thermal_info.core_control_mask & BIT(cpu)) && (cpus_offlined & BIT(cpu))) {
-			pr_notice("Prevent cpu%d up\n", cpu);
-			return NOTIFY_BAD;
-		}
-        pr_notice("voting for cpu%d up\n", cpu);
-	}
-
-	pr_debug("voting for CPU%d to be online\n", cpu);
-	return NOTIFY_OK;
-}
-
-static struct notifier_block __refdata msm_thermal_cpu_notifier = {
-	.notifier_call = msm_thermal_cpu_callback,
-};
-
-
 #endif
+
+// Vladimir
+// TODO: implement remount completing wait
+//
 #if 0
 static int remount_ro_done(void)
 {
@@ -314,9 +290,9 @@ static int remount_ro_done(void)
     int match;
     int found_rw_fs = 0;
 
-    f = sys_open("/proc/mounts", "r");
+    f = sys_open("/proc/mounts", O_RDONLY, 0);
     if (! f) {
-        /* If we can't read /proc/mounts, just give up */
+        pr_notice("failure to open /proc/mounts\n");
         return 1;
     }
 
@@ -339,14 +315,20 @@ static int remount_ro_done(void)
     return !found_rw_fs;
 }
 #endif
-static void remount_ro(void)
-{
-    int fd, cnt = 0;
 
-    /* Trigger the remount of the filesystems as read-only,
-     * which also marks them clean.
-     */
-    fd = sys_open("/proc/sysrq-trigger", O_WRONLY, 0);
+extern int emergency_remount_register_notifier(struct notifier_block *nb);
+
+static void remount_ro(struct a8_power_lost_detect_info *pwrl)
+{
+    int fd, i = 0;
+
+    fd = emergency_remount_register_notifier(&pwrl->a8_power_lost_remount_notifier);
+    if (fd) {
+        pr_err("failure to register remount notifier [%d]\n", fd);
+        return;
+    }
+
+    fd = sys_open("/proc/sysrq-trigger", O_WRONLY, 0); 
     if (fd < 0) {
         pr_notice("failure to open /proc/sysrq-trigger\n");
         return;
@@ -355,10 +337,8 @@ static void remount_ro(void)
     sys_close(fd);
 
 
-    /* Now poll /proc/mounts till it's done */
-    while (/*!remount_ro_done() && */(cnt < 64)) {
-        mdelay(10);
-        cnt++;
+    while (!pwrl->remount_complete && (i++ < 40)) {
+        msleep(100);
     }
 
     return;
@@ -491,12 +471,13 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
         }
         timer = val;
     } else if (pwrl->pwr_lost_ps == e_pwrl_device_off) {
+        pwrl->remount_complete = 0;
         spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
         pr_notice("urgent remount block devices ro %lld\n", ktime_to_ms(ktime_get()));
         //sys_umount("/data", MNT_FORCE | MNT_DETACH);
 
         sys_sync();
-        remount_ro();
+        remount_ro(pwrl);
         pr_notice("urgent shutdown device %lld\n", ktime_to_ms(ktime_get()));
         orderly_poweroff(1);
         return;
@@ -527,6 +508,34 @@ static irqreturn_t a8_power_lost_detect_handler(int irq, void *irq_data)
 	return IRQ_HANDLED;
 }
 
+static int __ref a8_power_lost_cpu_callback(struct notifier_block *nfb, unsigned long a, void *pcpu)
+{
+	uint32_t cpu = (uintptr_t)pcpu;
+    struct a8_power_lost_detect_info *pwrl = container_of(nfb, struct a8_power_lost_detect_info, a8_power_lost_cpu_notifier);
+
+	if (a == CPU_UP_PREPARE || a == CPU_UP_PREPARE_FROZEN) {
+		if (pwrl->pwr_lost_ps != e_pwrl_unspecified) {
+			pr_notice("prevent cpu%d up\n", cpu);
+			return NOTIFY_BAD;
+		}
+        pr_notice("voting for cpu%d up\n", cpu);
+	}
+
+	return NOTIFY_OK;
+}
+
+static int __ref a8_power_lost_remount_callback(struct notifier_block *nfb, unsigned long a, void *arg)
+{
+    struct a8_power_lost_detect_info *pwrl = container_of(nfb, struct a8_power_lost_detect_info, a8_power_lost_remount_notifier);
+
+    spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+    pwrl->remount_complete = (unsigned int)a;
+    pr_notice("remounted %d\n", pwrl->remount_complete);
+    spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+
+	return NOTIFY_OK;
+}
+
 static int a8_power_lost_detect_probe(struct platform_device *pdev)
 {
 	int err, val;
@@ -548,6 +557,14 @@ static int a8_power_lost_detect_probe(struct platform_device *pdev)
 
     pwrl->sys_ready = 0;
     pwrl->dbg_lvl = 0;
+    pwrl->a8_power_lost_cpu_notifier.notifier_call = a8_power_lost_cpu_callback;
+    pwrl->a8_power_lost_remount_notifier.notifier_call = a8_power_lost_remount_callback;
+
+    err = register_cpu_notifier(&pwrl->a8_power_lost_cpu_notifier);
+    if (err) {
+        pr_err("failure to register cpu notifier [%d]\n", err);
+    }
+
     do {
         spin_lock_init(&pwrl->pwr_lost_lock);
 
@@ -719,6 +736,8 @@ static int a8_power_lost_detect_probe(struct platform_device *pdev)
 		return 0;
 	}while(0);
 
+    unregister_cpu_notifier(&pwrl->a8_power_lost_cpu_notifier);
+
     if (pwrl->pwr_lost_irq >= 0) {
         disable_irq_nosync(pwrl->pwr_lost_irq); 
 //        if (device_may_wakeup(dev))
@@ -802,6 +821,8 @@ static int a8_power_lost_detect_remove(struct platform_device *pdev)
 //        disable_irq_wake(pwrl->pwr_lost_irq);
     device_wakeup_disable(&pdev->dev);
     devm_free_irq(&pdev->dev, pwrl->pwr_lost_irq, pwrl);
+
+    unregister_cpu_notifier(&pwrl->a8_power_lost_cpu_notifier);
 
     device_remove_file(pwrl->hmd, &dev_attr_name);
     device_remove_file(pwrl->hmd, &pwrl->attr_in.attr);
