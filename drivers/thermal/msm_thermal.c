@@ -2827,7 +2827,7 @@ static void limit_freq(struct work_struct *work)
 #if 1
     freq = limitfreq(max_temp);
     if (2 * cpus[0].threshold[FREQ_THRESHOLD_HIGH].temp - cpus[0].threshold[FREQ_THRESHOLD_LOW].temp < max_temp){
-        pr_notice("%s reached to critical temperature [%ld deg C]\n", cpus[cpu].sensor_type, max_temp);
+        pr_notice("%s reached to critical temperature [%ld deg C]\n", cpus[0].sensor_type, max_temp);
         pr_notice("urgent shutdown\n");
         orderly_poweroff(1);
         return;
