@@ -2826,18 +2826,18 @@ static void limit_freq(struct work_struct *work)
 
 #if 1
     freq = limitfreq(max_temp);
+    if (2 * cpus[0].threshold[FREQ_THRESHOLD_HIGH].temp - cpus[0].threshold[FREQ_THRESHOLD_LOW].temp < max_temp){
+        pr_notice("%s reached to critical temperature [%ld deg C]\n", cpus[cpu].sensor_type, max_temp);
+        pr_notice("urgent shutdown\n");
+        orderly_poweroff(1);
+        return;
+    }
     mutex_lock(&core_control_mutex);
     get_online_cpus();
     for_each_possible_cpu(cpu) {
         if (!(msm_thermal_info.bootup_freq_control_mask & BIT(cpus[cpu].cpu)))
             continue;
 
-        if (2 * cpus[cpu].threshold[FREQ_THRESHOLD_HIGH].temp - cpus[cpu].threshold[FREQ_THRESHOLD_LOW].temp < max_temp){
-            pr_notice("%s reached to critical temperature [%ld deg C]\n", cpus[cpu].sensor_type, max_temp);
-            pr_notice("urgent shutdown\n");
-            orderly_poweroff(1);
-            continue;
-        }
         if (cpus[cpu].max_freq) {
             continue;
         }
@@ -2998,9 +2998,6 @@ init_kthread:
 	 */
 	if (hotplug_init_cpu_offlined())
 		kthread_stop(hotplug_task);
-
-    INIT_DELAYED_WORK(&limit_freq_work, limit_freq);
-    schedule_delayed_work(&limit_freq_work, 0);
 }
 
 static __ref int do_freq_mitigation(void *data)
@@ -3164,6 +3161,9 @@ init_freq_thread:
 				PTR_ERR(freq_mitigation_task));
 		return;
 	}
+
+    INIT_DELAYED_WORK(&limit_freq_work, limit_freq);
+    schedule_delayed_work(&limit_freq_work, 0);
 }
 
 int msm_thermal_get_freq_plan_size(uint32_t cluster, unsigned int *table_len)
