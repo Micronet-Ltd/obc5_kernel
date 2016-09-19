@@ -2156,7 +2156,9 @@ static void __ref do_core_control(long temp)
 			pr_info("Set Offline: CPU%d Temp: %ld\n",
 					i, temp);
 			trace_thermal_pre_core_offline(i);
+            mutex_unlock(&core_control_mutex);
 			ret = cpu_down(i);
+            mutex_lock(&core_control_mutex);
 			if (ret)
 				pr_err("Error %d offline core %d\n",
 					ret, i);
@@ -2181,7 +2183,9 @@ static void __ref do_core_control(long temp)
 			if (cpu_online(i))
 				continue;
 			trace_thermal_pre_core_online(i);
+            mutex_unlock(&core_control_mutex);
 			ret = cpu_up(i);
+            mutex_lock(&core_control_mutex);
 			if (ret)
 				pr_err("Error %d online core %d\n",
 						ret, i);
@@ -2635,14 +2639,6 @@ static void do_freq_control(long temp)
 		return do_cluster_freq_ctrl(temp);
 	if (!freq_table_get)
 		return;
-#if 0
-    if (msm_thermal_info.freq_mitig_temp_degc + msm_thermal_info.freq_mitig_temp_hysteresis_degc <= temp){
-        pr_notice("%s reached to critical temperature [%ld deg C]\n", cpus[cpu].sensor_type, temp);
-        pr_notice("urgent shutdown\n");
-        orderly_poweroff(1);
-        return;
-    }
-#endif
 
 	if (temp >= msm_thermal_info.limit_temp_degC) {
 		if (limit_idx == limit_idx_low)
@@ -2688,7 +2684,7 @@ static void check_temp(struct work_struct *work)
 	long temp = 0;
 	int ret = 0;
 
-	do_therm_reset();
+    do_therm_reset(); 
 
 	ret = therm_get_temp(msm_thermal_info.sensor_id, THERM_TSENS_ID, &temp);
 	if (ret) {
@@ -2699,13 +2695,10 @@ static void check_temp(struct work_struct *work)
 
     if (msm_thermal_info.freq_mitig_temp_degc + msm_thermal_info.freq_mitig_temp_hysteresis_degc <= temp){
         pr_notice("reached to critical temperature [%ld deg C]\n", temp);
-        pr_notice("urgent shutdown\n");
-        //orderly_poweroff(1);
+        pr_notice("schedule shutdown\n");
+        msm_thermal_info.shutdown_in_process = 1;
 
-        machine_power_off();
-
-        while(1);
-        return;
+//        pm_power_off();
     }
 
 	do_core_control(temp);
@@ -2811,6 +2804,12 @@ static void limit_freq(struct work_struct *work)
 	int err = 0;
     uint32_t cpu = 0, freq = UINT_MAX;
 
+    if (msm_thermal_info.shutdown_in_process) {
+        pr_notice("urgent shutdown\n");
+        orderly_poweroff(1); 
+        return;
+    }
+
     for_each_possible_cpu(cpu) {
         if (!(msm_thermal_info.bootup_freq_control_mask & BIT(cpus[cpu].cpu)))
             continue;
@@ -2835,7 +2834,8 @@ static void limit_freq(struct work_struct *work)
     if (2 * cpus[0].threshold[FREQ_THRESHOLD_HIGH].temp - cpus[0].threshold[FREQ_THRESHOLD_LOW].temp < max_temp){
         pr_notice("%s reached to critical temperature [%ld deg C]\n", cpus[0].sensor_type, max_temp);
         pr_notice("urgent shutdown\n");
-        orderly_poweroff(1);
+        orderly_poweroff(1); 
+
         return;
     }
     mutex_lock(&core_control_mutex);
@@ -4383,6 +4383,8 @@ int msm_thermal_init(struct msm_thermal_data *pdata)
 			CPUFREQ_POLICY_NOTIFIER);
 	if (ret)
 		pr_err("cannot register cpufreq notifier. err:%d\n", ret);
+
+    msm_thermal_info.shutdown_in_process = 0;
 
 	INIT_DELAYED_WORK(&check_temp_work, check_temp);
 	schedule_delayed_work(&check_temp_work, 0);
