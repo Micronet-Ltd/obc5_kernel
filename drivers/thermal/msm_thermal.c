@@ -2145,13 +2145,6 @@ static void __ref do_core_control(long temp)
 	if (!core_control_enabled)
 		return;
 
-    if (msm_thermal_info.freq_mitig_temp_degc + msm_thermal_info.freq_mitig_temp_hysteresis_degc <= temp){
-        pr_notice("reached to critical temperature [%ld deg C]\n", temp);
-        pr_notice("urgent shutdown\n");
-        orderly_poweroff(1);
-        return;
-    }
-
 	mutex_lock(&core_control_mutex);
 	if (msm_thermal_info.core_control_mask &&
 		temp >= msm_thermal_info.core_limit_temp_degC) {
@@ -2642,13 +2635,14 @@ static void do_freq_control(long temp)
 		return do_cluster_freq_ctrl(temp);
 	if (!freq_table_get)
 		return;
-
+#if 0
     if (msm_thermal_info.freq_mitig_temp_degc + msm_thermal_info.freq_mitig_temp_hysteresis_degc <= temp){
         pr_notice("%s reached to critical temperature [%ld deg C]\n", cpus[cpu].sensor_type, temp);
         pr_notice("urgent shutdown\n");
         orderly_poweroff(1);
         return;
     }
+#endif
 
 	if (temp >= msm_thermal_info.limit_temp_degC) {
 		if (limit_idx == limit_idx_low)
@@ -2702,6 +2696,18 @@ static void check_temp(struct work_struct *work)
 				msm_thermal_info.sensor_id, ret);
 		goto reschedule;
 	}
+
+    if (msm_thermal_info.freq_mitig_temp_degc + msm_thermal_info.freq_mitig_temp_hysteresis_degc <= temp){
+        pr_notice("reached to critical temperature [%ld deg C]\n", temp);
+        pr_notice("urgent shutdown\n");
+        //orderly_poweroff(1);
+
+        machine_power_off();
+
+        while(1);
+        return;
+    }
+
 	do_core_control(temp);
 	do_vdd_mx();
 	do_psm();
