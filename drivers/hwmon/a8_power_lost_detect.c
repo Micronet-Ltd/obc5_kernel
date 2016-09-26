@@ -328,7 +328,7 @@ static void remount_ro(struct a8_power_lost_detect_info *pwrl)
         return;
     }
 
-    fd = sys_open("/proc/sysrq-trigger", O_WRONLY, 0); 
+    fd = sys_open("/proc/sysrq-trigger", O_WRONLY, 0);
     if (fd < 0) {
         pr_notice("failure to open /proc/sysrq-trigger\n");
         return;
@@ -340,6 +340,21 @@ static void remount_ro(struct a8_power_lost_detect_info *pwrl)
     while (!pwrl->remount_complete && (i++ < 40)) {
         msleep(100);
     }
+
+    return;
+}
+
+static void wcnss_suspend(struct a8_power_lost_detect_info *pwrl)
+{
+    int fd;
+
+    fd = sys_open("/sys/devices/soc.0/a000000.qcom,wcnss-wlan/power_loss", O_WRONLY, 0);
+    if (fd < 0) {
+        pr_err("/sys/devices/soc.0/a000000.qcom,wcnss-wlan/power_loss\n");
+        return;
+    }
+    sys_write(fd, "1", 1);
+    sys_close(fd);
 
     return;
 }
@@ -419,17 +434,27 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
         if (pwrl->pwr_lost_pin_level == val) {
             val = pwrl->pwr_lost_wan_delay;
             pwrl->pwr_lost_ps = e_pwrl_wan_off;
-            pr_notice("wan may be shutdown %lld\n", ktime_to_ms(ktime_get()));
+            if (0 == pwrl->pwr_lost_wan_delay) {
+                pr_notice("wan shutdown %lld\n", ktime_to_ms(ktime_get()));
+            } else {
+                pr_notice("wan will shutdown %lld + %d\n", ktime_to_ms(ktime_get()), val);
+            }
 
-            if (pwrl->pwr_lost_wlan_delay < val) {
+            if (0 == pwrl->pwr_lost_wlan_delay) {
+                pr_notice("suspend wlan %lld\n", ktime_to_ms(ktime_get()));
+                spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+                wcnss_suspend(pwrl);
+                spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+            } else if (pwrl->pwr_lost_wlan_delay < val) {
                 val = pwrl->pwr_lost_wlan_delay;
                 pwrl->pwr_lost_ps = e_pwrl_wlan_off;
-                pr_notice("wlan may be shutdown %lld\n", ktime_to_ms(ktime_get()));
+                pr_notice("wlan will shutdown %lld + %d\n", ktime_to_ms(ktime_get()), val);
             }
+
             if (pwrl->pwr_lost_off_delay < val) {
                 val = pwrl->pwr_lost_off_delay;
                 pwrl->pwr_lost_ps = e_pwrl_device_off;
-                pr_notice("device may be shutdown %lld\n", ktime_to_ms(ktime_get()));
+                pr_notice("device will shutdown %lld + %d\n", ktime_to_ms(ktime_get()), val);
             }
             timer = val;
         } else {
@@ -437,44 +462,50 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
             timer = 0;
         }
     } else if (pwrl->pwr_lost_ps == e_pwrl_wan_off) {
-        pr_notice("shutdown wan %lld\n", ktime_to_ms(ktime_get()));
+        if (pwrl->pwr_lost_wan_delay) {
+            pr_notice("wan shutdown %lld\n", ktime_to_ms(ktime_get()));
+        }
 
         if (pwrl->pwr_lost_wlan_delay > (ktime_to_ms(ktime_get()) - pwrl->pwr_lost_timer)) {
             val = pwrl->pwr_lost_timer + pwrl->pwr_lost_wlan_delay - ktime_to_ms(ktime_get());
             pwrl->pwr_lost_ps = e_pwrl_wlan_off;
-            pr_notice("wlan may be shutdown %lld\n", ktime_to_ms(ktime_get()));
+            pr_notice("wlan will shutdown %lld + %d\n", ktime_to_ms(ktime_get()), val);
         } else {
-            pr_notice("device may be shutdown %lld\n", ktime_to_ms(ktime_get()));
             if (pwrl->pwr_lost_off_delay > (ktime_to_ms(ktime_get()) - pwrl->pwr_lost_timer)) {
                 val = pwrl->pwr_lost_timer + pwrl->pwr_lost_off_delay - ktime_to_ms(ktime_get());
             } else {
                 val = 0;
             }
+            pr_notice("device will shutdown %lld + %d\n", ktime_to_ms(ktime_get()), val);
             pwrl->pwr_lost_ps = e_pwrl_device_off;
         }
         timer = val;
     } else if (pwrl->pwr_lost_ps == e_pwrl_wlan_off) {
-        pr_notice("shutdown wlan %lld\n", ktime_to_ms(ktime_get()));
+        if (pwrl->pwr_lost_wlan_delay) {
+            pr_notice("suspend wlan %lld\n", ktime_to_ms(ktime_get()));
+            spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+            wcnss_suspend(pwrl);
+            spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+        }
 
         if (pwrl->pwr_lost_wan_delay > (ktime_to_ms(ktime_get()) - pwrl->pwr_lost_timer)) {
             val = pwrl->pwr_lost_timer + pwrl->pwr_lost_wan_delay - ktime_to_ms(ktime_get());
             pwrl->pwr_lost_ps = e_pwrl_wan_off;
-            pr_notice("wan may be shutdown %lld\n", ktime_to_ms(ktime_get()));
+            pr_notice("wan will shutdown %lld + %d\n", ktime_to_ms(ktime_get()), val);
         } else {
-            pr_notice("device may be shutdown %lld\n", ktime_to_ms(ktime_get()));
             if (pwrl->pwr_lost_off_delay > (ktime_to_ms(ktime_get()) - pwrl->pwr_lost_timer)) {
                 val = pwrl->pwr_lost_timer + pwrl->pwr_lost_off_delay - ktime_to_ms(ktime_get());
             } else {
                 val = 0;
             }
             pwrl->pwr_lost_ps = e_pwrl_device_off;
+            pr_notice("device will shutdown %lld + %d\n", ktime_to_ms(ktime_get()), val);
         }
         timer = val;
     } else if (pwrl->pwr_lost_ps == e_pwrl_device_off) {
         pwrl->remount_complete = 0;
         spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
         pr_notice("urgent remount block devices ro %lld\n", ktime_to_ms(ktime_get()));
-        //sys_umount("/data", MNT_FORCE | MNT_DETACH);
 
         sys_sync();
         remount_ro(pwrl);
