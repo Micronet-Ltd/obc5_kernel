@@ -268,53 +268,11 @@ static int power_lost_notifier(struct notifier_block *nb, unsigned long val, voi
 
 // In probe
 power_lost_register_notifier(<specific> *dev_specific->power_lost_notifier)
-
-
-extern int dpm_dev_suspend(char *);
-extern int dpm_dev_resume(char *);
 #endif
 
 // Vladimir
 // TODO: implement remount completing wait
 //
-#if 0
-static int remount_ro_done(void)
-{
-    int f;
-    char mount_dev[256];
-    char mount_dir[256];
-    char mount_type[256];
-    char mount_opts[256];
-    int mount_freq;
-    int mount_passno;
-    int match;
-    int found_rw_fs = 0;
-
-    f = sys_open("/proc/mounts", O_RDONLY, 0);
-    if (! f) {
-        pr_notice("failure to open /proc/mounts\n");
-        return 1;
-    }
-
-    do {
-        match = fscanf(f, "%255s %255s %255s %255s %d %d\n",
-                       mount_dev, mount_dir, mount_type,
-                       mount_opts, &mount_freq, &mount_passno);
-        mount_dev[255] = 0;
-        mount_dir[255] = 0;
-        mount_type[255] = 0;
-        mount_opts[255] = 0;
-        if ((match == 6) && !strncmp(mount_dev, "/dev/block", 10) && strstr(mount_opts, "rw,")) {
-            found_rw_fs = 1;
-            break;
-        }
-    } while (match != EOF);
-
-    fclose(f);
-
-    return !found_rw_fs;
-}
-#endif
 
 extern int emergency_remount_register_notifier(struct notifier_block *nb);
 
@@ -359,6 +317,24 @@ static void wcnss_suspend(struct a8_power_lost_detect_info *pwrl)
     return;
 }
 
+static void adreno_suspend(struct a8_power_lost_detect_info *pwrl, int s)
+{
+    int fd;
+    char suspend[2];
+
+    snprintf(suspend, sizeof(suspend) - 1, "%d", s);
+
+    fd = sys_open("/sys/devices/soc.0/1c00000.qcom,kgsl-3d0/kgsl/kgsl-3d0/suspend", O_WRONLY, 0);
+    if (fd < 0) {
+        pr_err("/sys/devices/soc.0/1c00000.qcom,kgsl-3d0/kgsl/kgsl-3d0/suspend\n");
+        return;
+    }
+    sys_write(fd, suspend, 1);
+    sys_close(fd);
+
+    return;
+}
+
 static void __ref a8_power_lost_detect_work(struct work_struct *work)
 {
     int val, err;
@@ -395,13 +371,17 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
                     pr_notice("up cpu%d\n", val);
 #endif
             }
+            adreno_suspend(pwrl, 0);
             power_lost_notify(0, 0);
             enable_irq(pwrl->pwr_lost_irq);
             return;
         }
     } else if (pwrl->pwr_lost_ps == e_pwrl_display_off) {
         if (pwrl->pwr_lost_pin_level == val) {
-            pr_notice("shutdown gpu %lld\n", ktime_to_ms(ktime_get()));
+            pr_notice("suspend adreno %lld\n", ktime_to_ms(ktime_get()));
+            spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+            adreno_suspend(pwrl, 1);
+            spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
             pwrl->pwr_lost_ps = e_pwrl_gpu_off;
         } else {
             pwrl->pwr_lost_ps = e_pwrl_unspecified;
