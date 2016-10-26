@@ -177,8 +177,8 @@
 		pinctrl-0 = <&urgent_shut_down_pin>;		
 		a8,status-pin = <&msm_gpio 91 0>;
 		a8,status-level = <1>;
-		a8,on-pulse-width = <100>;
-		a8,off-pulse-width = <50>;
+		a8,on-pulse-width = <150>;
+		a8,off-pulse-width = <35>;
 	};
 
 	qcom,mpm2-sleep-counter@4a3000 {

@@ -439,6 +439,19 @@
 		compatible = "virtual-leds";
 		status = "okay";
 	};
+	a8_power_lost_hm {
+		compatible = "a8-hm-power-lost";
+		pinctrl-names = "default";
+		pinctrl-0 = <&power_lost_pin>;		
+		qcom,irq-gpio = <&msm_gpio 89 0x01>;
+		interrupt-names = "power_lost";
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <&msm_gpio 89 1>;
+		a8,wan-off-delay = <0>;
+		a8,wlan-off-delay = <0>;
+		a8,plat-off-delay = <2000>;
+		status = "okay";
+	};
 };
 
 /* add by shengweiguang for usb gadget 20150817 begin */
@@ -487,15 +500,6 @@
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};*/	
-		/*	
-		pcut_key {
-			label = "pcut_key";
-			gpios = <&msm_gpio 89 0x1>;
-			linux,input-type = <1>;
-			linux,code = <61>;
-			gpio-key,wakeup;
-			debounce-interval = <15>;
-		};*/
 	};
 };
 
