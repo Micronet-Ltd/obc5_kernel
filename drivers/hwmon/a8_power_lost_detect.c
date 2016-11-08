@@ -799,6 +799,7 @@ static int a8_power_lost_detect_resume(struct device *dev)
 {
     struct a8_power_lost_detect_info *pwrl = dev_get_drvdata(dev);
 
+    disable_irq_nosync(pwrl->pwr_lost_irq);
     spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
     pwrl->pwr_lost_ps = e_pwrl_unspecified;
     spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);

@@ -449,7 +449,7 @@
 		interrupts = <&msm_gpio 89 1>;
 		a8,wan-off-delay = <0>;
 		a8,wlan-off-delay = <0>;
-		a8,plat-off-delay = <2000>;
+		a8,plat-off-delay = <19000>;
 		status = "okay";
 	};
 };
