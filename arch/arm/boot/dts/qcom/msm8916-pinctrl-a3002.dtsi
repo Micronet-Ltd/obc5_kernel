@@ -196,6 +196,17 @@
 			};
 		};
 
+		power_lost {
+			qcom,pins = <&gp 89>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <0>;
+		        label = "power_lost";
+			power_lost_pin: default {
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+
 		watchdog_pin_active {
 			qcom,pins = <&gp 2>;
 			qcom,num-grp-pins = <1>;
@@ -1191,9 +1202,9 @@
 		};
 
 		tlmm_gpio_key {
-			qcom,pins = <&gp 109>, <&gp 107>, <&gp 112>, <&gp 89>;
+			qcom,pins = <&gp 109>, <&gp 107>, <&gp 112>;
 			qcom,pin-func = <0>;
-			qcom,num-grp-pins = <4>;
+			qcom,num-grp-pins = <3>;
 			label = "tlmm_gpio_key";
 			gpio_key_active: gpio_key_active {
 				drive-strength = <2>;

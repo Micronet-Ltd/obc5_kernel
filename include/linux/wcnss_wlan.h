@@ -89,6 +89,8 @@ void wcnss_register_thermal_mitigation(struct device *dev,
 				void (*tm_notify)(struct device *dev, int));
 void wcnss_unregister_thermal_mitigation(
 				void (*tm_notify)(struct device *dev, int));
+void wcnss_register_power_loss(struct device *dev,
+				void (*power_loss_notify)(struct device *dev, int));
 struct platform_device *wcnss_get_platform_device(void);
 struct wcnss_wlan_config *wcnss_get_wlan_config(void);
 void wcnss_set_iris_xo_mode(int iris_xo_mode_set);

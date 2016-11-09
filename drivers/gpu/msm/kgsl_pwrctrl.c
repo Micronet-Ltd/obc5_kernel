@@ -11,6 +11,8 @@
  *
  */
 
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
+
 #include <linux/export.h>
 #include <linux/interrupt.h>
 #include <asm/page.h>
@@ -1810,13 +1812,15 @@ _slumber(struct kgsl_device *device)
 	int status = 0;
 	switch (device->state) {
 	case KGSL_STATE_ACTIVE:
+        //pr_notice("active\n");
 		if (!device->ftbl->is_hw_collapsible(device)) {
 			kgsl_pwrctrl_request_state(device, KGSL_STATE_NONE);
 			return -EBUSY;
 		}
 		/* fall through */
 	case KGSL_STATE_NAP:
-	case KGSL_STATE_SLEEP:
+    case KGSL_STATE_SLEEP:
+        //pr_notice("sleep/nap\n");
 		del_timer_sync(&device->idle_timer);
 		if (device->pwrctrl.thermal_cycle == CYCLE_ACTIVE) {
 			device->pwrctrl.thermal_cycle = CYCLE_ENABLE;
@@ -1835,6 +1839,7 @@ _slumber(struct kgsl_device *device)
 						PM_QOS_DEFAULT_VALUE);
 		break;
 	case KGSL_STATE_SUSPEND:
+        //pr_notice("suspend\n");
 		complete_all(&device->hwaccess_gate);
 		device->ftbl->resume(device);
 		kgsl_pwrctrl_set_state(device, KGSL_STATE_SLUMBER);

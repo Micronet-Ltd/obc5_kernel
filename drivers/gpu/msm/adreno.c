@@ -10,6 +10,8 @@
  * GNU General Public License for more details.
  *
  */
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
+
 #include <linux/module.h>
 #include <linux/uaccess.h>
 #include <linux/ioctl.h>
@@ -22,6 +24,7 @@
 
 #include <linux/msm-bus-board.h>
 #include <linux/msm-bus.h>
+#include <linux/pm.h>
 
 #include "kgsl.h"
 #include "kgsl_pwrscale.h"
@@ -1885,6 +1888,42 @@ static ssize_t _sptp_pc_show(struct device *dev,
 					&adreno_dev->pwrctrl_flag));
 }
 
+
+static ssize_t _suspend_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct kgsl_device *device = kgsl_device_from_dev(dev);
+	int err, t = 0;
+
+	if (!device || !device->pdev)
+		return -ENODEV;
+
+    err = kgsl_sysfs_store(buf, &t);
+	if (err < 0)
+		return err;
+
+    //pr_notice("prev %s\n", kgsl_pwrstate_to_str(device->state));
+
+	if (t)
+        kgsl_suspend_driver(device->pdev, PMSG_SUSPEND);
+	else
+		kgsl_resume_driver(device->pdev);
+
+    return count;
+}
+
+/**
+ */
+static ssize_t _suspend_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    struct kgsl_device *device = kgsl_device_from_dev(dev);
+
+    if (!device) {
+        return -ENODEV;
+    }
+
+    return snprintf(buf, PAGE_SIZE, "%d\n", (device->state == KGSL_STATE_SUSPEND)); 
+}
+
 #define ADRENO_DEVICE_ATTR(name) \
 	DEVICE_ATTR(name, 0644,	_ ## name ## _show, _ ## name ## _store);
 
@@ -1897,6 +1936,7 @@ static ADRENO_DEVICE_ATTR(ft_hang_intr_status);
 static DEVICE_INT_ATTR(wake_nice, 0644, _wake_nice);
 static ADRENO_DEVICE_ATTR(wake_timeout);
 static ADRENO_DEVICE_ATTR(sptp_pc);
+static ADRENO_DEVICE_ATTR(suspend);
 
 static const struct device_attribute *_attr_list[] = {
 	&dev_attr_ft_policy,
@@ -1907,6 +1947,7 @@ static const struct device_attribute *_attr_list[] = {
 	&dev_attr_wake_nice.attr,
 	&dev_attr_wake_timeout,
 	&dev_attr_sptp_pc,
+    &dev_attr_suspend,
 	NULL,
 };
 
