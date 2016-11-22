@@ -425,6 +425,7 @@ static struct {
 	int pc_disabled;
 	struct delayed_work wcnss_pm_qos_del_req;
 	struct mutex pm_qos_mutex;
+    void (*power_loss_notify)(struct device *, int);
 } *penv = NULL;
 
 static ssize_t wcnss_wlan_macaddr_store(struct device *dev,
@@ -527,6 +528,38 @@ static ssize_t wcnss_thermal_mitigation_store(struct device *dev,
 static DEVICE_ATTR(thermal_mitigation, S_IRUSR | S_IWUSR,
 	wcnss_thermal_mitigation_show, wcnss_thermal_mitigation_store);
 
+
+static ssize_t wcnss_power_loss_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	if (!penv)
+		return -ENODEV;
+
+	return scnprintf(buf, PAGE_SIZE, "%p\n", penv->power_loss_notify);
+}
+
+static ssize_t wcnss_power_loss_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int value;
+    void (* call)(struct device *, int);
+
+	if (!penv)
+		return -ENODEV;
+
+	if (sscanf(buf, "%d", &value) != 1)
+		return -EINVAL;
+
+    mutex_lock(&penv->dev_lock);
+    call = (penv->power_loss_notify)?penv->power_loss_notify:0;
+    mutex_unlock(&penv->dev_lock);
+
+	if (call)
+		call(dev, value);
+
+	return count;
+}
+
+static DEVICE_ATTR(power_loss, S_IRUSR | S_IWUSR, wcnss_power_loss_show, wcnss_power_loss_store);
 
 static ssize_t wcnss_version_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
@@ -1145,6 +1178,12 @@ static int wcnss_create_sysfs(struct device *dev)
 	if (ret)
 		goto remove_version;
 
+    ret = device_create_file(dev, &dev_attr_power_loss);
+    if (ret) {
+        device_remove_file(dev, &dev_attr_wcnss_mac_addr);
+        goto remove_version;
+    }
+
 	return 0;
 
 remove_version:
@@ -1160,6 +1199,7 @@ remove_serial:
 static void wcnss_remove_sysfs(struct device *dev)
 {
 	if (dev) {
+        device_remove_file(dev, &dev_attr_power_loss);
 		device_remove_file(dev, &dev_attr_serial_number);
 		device_remove_file(dev, &dev_attr_thermal_mitigation);
 		device_remove_file(dev, &dev_attr_wcnss_version);
@@ -1584,6 +1624,18 @@ void wcnss_wlan_unregister_pm_ops(struct device *dev,
 	}
 }
 EXPORT_SYMBOL(wcnss_wlan_unregister_pm_ops);
+
+void wcnss_register_power_loss(struct device *dev, void (*power_loss_notify)(struct device *, int))
+{
+    mutex_lock(&penv->dev_lock);
+	if (penv && dev && power_loss_notify)
+		penv->power_loss_notify = power_loss_notify;
+    else if (penv) {
+        penv->power_loss_notify = 0;
+    }
+    mutex_unlock(&penv->dev_lock);
+}
+EXPORT_SYMBOL(wcnss_register_power_loss);
 
 void wcnss_register_thermal_mitigation(struct device *dev,
 				void (*tm_notify)(struct device *, int))

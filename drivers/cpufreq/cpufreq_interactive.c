@@ -16,6 +16,8 @@
  *
  */
 
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
+
 #include <linux/cpu.h>
 #include <linux/cpumask.h>
 #include <linux/cpufreq.h>
@@ -687,9 +689,14 @@ static int cpufreq_interactive_speedchange_task(void *data)
 			}
 
 			if (max_freq != pcpu->policy->cur) {
-				__cpufreq_driver_target(pcpu->policy,
-							max_freq,
-							CPUFREQ_RELATION_H);
+                if (cpu_online(cpu)) {
+                    //pr_notice("cpu[%u] %u Hz\n", cpu, max_freq);
+                    __cpufreq_driver_target(pcpu->policy,
+                                max_freq,
+                                CPUFREQ_RELATION_H);
+                } else {
+                    pr_notice("setspeed: cpu%d offline\n", cpu);
+                }
 				for_each_cpu(j, pcpu->policy->cpus) {
 					pjcpu = &per_cpu(cpuinfo, j);
 					pjcpu->hispeed_validate_time = hvt;
@@ -1663,7 +1670,12 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			del_timer_sync(&pcpu->cpu_timer);
 			del_timer_sync(&pcpu->cpu_slack_timer);
 			pcpu->last_evaluated_jiffy = get_jiffies_64();
-			cpufreq_interactive_timer_start(tunables, j);
+            if (cpu_online(j)) {
+                cpufreq_interactive_timer_start(tunables, j);
+            } else {
+//                cpufreq_interactive_timer(0);
+                pr_notice("CPUFREQ_GOV_START: cpu%d offline\n", j);
+            }
 			pcpu->governor_enabled = 1;
 			up_write(&pcpu->enable_sem);
 			pcpu->reject_notification = false;
@@ -1689,46 +1701,54 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 		mutex_unlock(&gov_lock);
 		break;
 
-	case CPUFREQ_GOV_LIMITS:
-		__cpufreq_driver_target(policy,
-				policy->cur, CPUFREQ_RELATION_L);
+    case CPUFREQ_GOV_LIMITS:
+        if (cpu_online(policy->cpu))
+            __cpufreq_driver_target(policy, policy->cur, CPUFREQ_RELATION_L);
+        else {
+            pr_notice("CPUFREQ_GOV_LIMITS: cpu%d offline; target not set\n", policy->cpu);
+        }
 
 		for_each_cpu(j, policy->cpus) {
-			pcpu = &per_cpu(cpuinfo, j);
+            pcpu = &per_cpu(cpuinfo, j);
 
-			down_read(&pcpu->enable_sem);
-			if (pcpu->governor_enabled == 0) {
-				up_read(&pcpu->enable_sem);
-				continue;
-			}
+            down_read(&pcpu->enable_sem);
+            if (pcpu->governor_enabled == 0) {
+                up_read(&pcpu->enable_sem);
+                continue;
+            }
 
-			spin_lock_irqsave(&pcpu->target_freq_lock, flags);
-			if (policy->max < pcpu->target_freq)
-				pcpu->target_freq = policy->max;
-			else if (policy->min > pcpu->target_freq)
-				pcpu->target_freq = policy->min;
+            spin_lock_irqsave(&pcpu->target_freq_lock, flags);
+            if (policy->max < pcpu->target_freq)
+                pcpu->target_freq = policy->max;
+            else if (policy->min > pcpu->target_freq)
+                pcpu->target_freq = policy->min;
 
-			spin_unlock_irqrestore(&pcpu->target_freq_lock, flags);
-			up_read(&pcpu->enable_sem);
+            spin_unlock_irqrestore(&pcpu->target_freq_lock, flags);
+            up_read(&pcpu->enable_sem);
 
-			/* Reschedule timer only if policy->max is raised.
-			 * Delete the timers, else the timer callback may
-			 * return without re-arm the timer when failed
-			 * acquire the semaphore. This race may cause timer
-			 * stopped unexpectedly.
-			 */
+            /* Reschedule timer only if policy->max is raised.
+             * Delete the timers, else the timer callback may
+             * return without re-arm the timer when failed
+             * acquire the semaphore. This race may cause timer
+             * stopped unexpectedly.
+             */
 
-			if (policy->max > pcpu->max_freq) {
-				pcpu->reject_notification = true;
-				down_write(&pcpu->enable_sem);
-				del_timer_sync(&pcpu->cpu_timer);
-				del_timer_sync(&pcpu->cpu_slack_timer);
-				cpufreq_interactive_timer_resched(j);
-				up_write(&pcpu->enable_sem);
-				pcpu->reject_notification = false;
-			}
+            if (policy->max > pcpu->max_freq) {
+                pcpu->reject_notification = true;
+                down_write(&pcpu->enable_sem);
+                del_timer_sync(&pcpu->cpu_timer);
+                del_timer_sync(&pcpu->cpu_slack_timer);
+                if (cpu_online(j)) {
+                    cpufreq_interactive_timer_resched(j);
+                } else {
+//                    cpufreq_interactive_timer(0);
+                    pr_notice("CPUFREQ_GOV_LIMITS: cpu%d offline, timer not rescheduled\n", j);
+                }
+                up_write(&pcpu->enable_sem);
+                pcpu->reject_notification = false;
+            }
 
-			pcpu->max_freq = policy->max;
+            pcpu->max_freq = policy->max;
 		}
 		break;
 	}

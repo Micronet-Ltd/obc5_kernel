@@ -71,6 +71,7 @@ struct msm_thermal_data {
 	int32_t vdd_mx_temp_degC;
 	int32_t vdd_mx_temp_hyst_degC;
 	int32_t therm_reset_temp_degC;
+    int32_t shutdown_in_process;
 };
 
 enum sensor_id_type {

@@ -946,9 +946,8 @@ static int tsens_tz_set_trip_temp(struct thermal_zone_device *thermal,
 		pr_err("tsens mapping index not found\n");
 		return rc;
 	}
+
 	code_err_chk = code = tsens_tz_degc_to_code(temp, sensor_sw_id);
-	if (!tm_sensor || trip < 0)
-		return -EINVAL;
 
 	lo_code = TSENS_THRESHOLD_MIN_CODE;
 	hi_code = TSENS_THRESHOLD_MAX_CODE;
