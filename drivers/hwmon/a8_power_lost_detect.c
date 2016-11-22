@@ -87,6 +87,8 @@ struct a8_power_lost_detect_info {
     int dbg_lvl;
     struct a8_power_lost_hmon_attr attr_ps;
 #endif
+    int suspended;
+    int resumed;
 };
 
 static ssize_t a8_power_lost_show_name(struct device *dev, struct device_attribute *attr, char *buf)
@@ -371,8 +373,14 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
                     pr_notice("up cpu%d\n", val);
 #endif
             }
-            adreno_suspend(pwrl, 0);
-            power_lost_notify(0, 0);
+            if (!pwrl->resumed) {
+                adreno_suspend(pwrl, 0); 
+                power_lost_notify(0, 0);
+            } else {
+                spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+                pwrl->resumed = 0;
+                spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+            }
             enable_irq(pwrl->pwr_lost_irq);
             return;
         }
@@ -514,7 +522,9 @@ static irqreturn_t a8_power_lost_detect_handler(int irq, void *irq_data)
     pwrl->pwr_lost_timer = ktime_to_ms(ktime_get());
     spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
 
-	schedule_delayed_work(&pwrl->pwr_lost_work, 0);
+    if (!pwrl->suspended) {
+        schedule_delayed_work(&pwrl->pwr_lost_work, 0); 
+    }
 
 	return IRQ_HANDLED;
 }
@@ -738,6 +748,7 @@ static int a8_power_lost_detect_probe(struct platform_device *pdev)
 
 		pwrl->pwr_lost_timer = -1;
         pwrl->pwr_lost_ps = e_pwrl_unspecified;
+        pwrl->resumed = 1;
 
         schedule_delayed_work(&pwrl->pwr_lost_work, (pwrl->pwr_lost_off_delay)?msecs_to_jiffies(pwrl->pwr_lost_off_delay): 0);
         pwrl->sys_ready = 1;
@@ -787,6 +798,8 @@ static int a8_power_lost_detect_suspend(struct device *dev)
     }
     spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
     pwrl->pwr_lost_ps = e_pwrl_device_suspend;
+    pwrl->resumed = 0;
+    pwrl->suspended = 1;
     spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
     if (device_may_wakeup(dev))
         enable_irq_wake(pwrl->pwr_lost_irq);
@@ -802,6 +815,8 @@ static int a8_power_lost_detect_resume(struct device *dev)
     disable_irq_nosync(pwrl->pwr_lost_irq);
     spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
     pwrl->pwr_lost_ps = e_pwrl_unspecified;
+    pwrl->resumed = 1;
+    pwrl->suspended = 0;
     spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
     if (device_may_wakeup(dev))
         disable_irq_wake(pwrl->pwr_lost_irq);
