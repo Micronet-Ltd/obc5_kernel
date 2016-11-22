@@ -374,8 +374,8 @@ void msm_gpio_show_resume_irq(void)
 	int i, irq, intstat;
 	int ngpio = msm_gpio.gpio_chip.ngpio;
 
-	if (!msm_show_resume_irq_mask)
-		return;
+//	if (!msm_show_resume_irq_mask)
+//		return;
 
 	spin_lock_irqsave(&tlmm_lock, irq_flags);
 	for_each_set_bit(i, msm_gpio.wake_irqs, ngpio) {

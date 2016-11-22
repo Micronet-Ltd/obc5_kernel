@@ -133,10 +133,10 @@ static int msm_smsm_probe(struct platform_device *pdev)
 		pr_err("%s: request_irq() failed on %d\n", __func__, irq_line);
 		return ret;
 	} else {
-		ret = enable_irq_wake(irq_line);
-		if (ret < 0)
-			pr_err("%s: enable_irq_wake() failed on %d\n", __func__,
-					irq_line);
+//		ret = enable_irq_wake(irq_line);
+//		if (ret < 0)
+//			pr_err("%s: enable_irq_wake() failed on %d\n", __func__,
+//					irq_line);
 	}
 
 	ret = smsm_post_init();
@@ -268,10 +268,10 @@ static int msm_smd_probe(struct platform_device *pdev)
 		pr_err("%s: request_irq() failed on %d\n", __func__, irq_line);
 		return ret;
 	} else {
-		ret = enable_irq_wake(irq_line);
-		if (ret < 0)
-			pr_err("%s: enable_irq_wake() failed on %d\n", __func__,
-					irq_line);
+//		ret = enable_irq_wake(irq_line);
+//		if (ret < 0)
+//			pr_err("%s: enable_irq_wake() failed on %d\n", __func__,
+//					irq_line);
 	}
 
 	smd_set_edge_subsys_name(edge, subsys_name);
