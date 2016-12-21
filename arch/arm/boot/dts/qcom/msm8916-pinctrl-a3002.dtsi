@@ -208,8 +208,8 @@
 		};
 
 		watchdog_pin_active {
-			qcom,pins = <&gp 2>;
-			qcom,num-grp-pins = <1>;
+			qcom,pins = <&gp 2>, <&gp 9>;
+			qcom,num-grp-pins = <2>;
 			qcom,pin-func = <0>;
 		        label = "watchdog_pin_active";
 			obc_watchdog_pin: default {
@@ -217,7 +217,18 @@
 				bias-disable;
 			};
 		};
-		
+		watchdog_pin_suspend {
+			qcom,pins = <&gp 2>, <&gp 9>;
+			qcom,num-grp-pins = <2>;
+			qcom,pin-func = <0>;
+		        label = "watchdog_pin_suspend";
+			/* suspended state */
+			watchdog_pin_sleep: watchdog_pin_sleep {
+				drive-strength = <2>; /* 2 MA */
+				bias-pull-down; /* pull down */
+			};
+		};
+
 		sdhc2_cd_pin {
 			qcom,pins = <&gp 38>;
 			qcom,num-grp-pins = <1>;
@@ -1227,7 +1238,7 @@
 			};
 		};
 		
-		// by skj
+		/* by skj*/
 		gpio_gps_pins {
 			qcom,pins = <&gp 3>, <&gp 54>, <&gp 96>;
 			qcom,pin-func = <0>;

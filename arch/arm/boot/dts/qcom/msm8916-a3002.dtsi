@@ -269,8 +269,9 @@
 	};
 	watchdogpin {
 		compatible = "ehang,watchdog-pin";
-		pinctrl-names = "default";
+		pinctrl-names = "default", "watchdog_pin_sleep";
 		pinctrl-0 = <&obc_watchdog_pin>;		
+		pinctrl-1 = <&watchdog_pin_sleep>;		
 		ehang,toggle-pin = <&msm_gpio 2 0>;
 		ehang,rf-kill-pin = <&msm_gpio 9 0>;
 		ehang,high-delay=<1000>;

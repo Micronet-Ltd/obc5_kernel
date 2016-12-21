@@ -10,6 +10,7 @@
  * GNU General Public License for more details.
  *
  */
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -134,7 +135,7 @@ enum {
 	MSM_MPM_DEBUG_NON_DETECTABLE_IRQ_IDLE = BIT(3),
 };
 
-static int msm_mpm_debug_mask = 1;
+static int msm_mpm_debug_mask = MSM_MPM_DEBUG_NON_DETECTABLE_IRQ | MSM_MPM_DEBUG_PENDING_IRQ;
 module_param_named(
 	debug_mask, msm_mpm_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
 );
@@ -569,9 +570,10 @@ void msm_mpm_exit_sleep(bool from_idle)
 		pending = msm_mpm_read(MSM_MPM_REG_STATUS, i);
 		pending &= enabled_intr[i];
 
-		if (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)
+		if (!from_idle && (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)) {
 			pr_info("%s: enabled_intr.%d pending.%d: 0x%08x 0x%08lx\n",
-				__func__, i, i, enabled_intr[i], pending);
+                __func__, i, i, enabled_intr[i], pending);
+        }
 
 		k = find_first_bit(&pending, 32);
 		while (k < 32) {
@@ -579,6 +581,10 @@ void msm_mpm_exit_sleep(bool from_idle)
 			unsigned int apps_irq = msm_mpm_get_irq_m2a(mpm_irq);
 			struct irq_desc *desc = apps_irq ?
 				irq_to_desc(apps_irq) : NULL;
+
+            if (!from_idle && (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)) {
+                pr_notice("wake irq[%d]\n", apps_irq);
+            }
 
 			if (desc && !irqd_is_level_type(&desc->irq_data)) {
 				irq_set_pending(apps_irq);

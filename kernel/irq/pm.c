@@ -5,6 +5,7 @@
  *
  * This file contains power management functions related to interrupts.
  */
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
 
 #include <linux/irq.h>
 #include <linux/module.h>
@@ -105,7 +106,7 @@ int check_wakeup_irqs(void)
 	for_each_irq_desc(irq, desc) {
 		if (irqd_is_wakeup_set(&desc->irq_data)) {
 			if (desc->istate & IRQS_PENDING) {
-				pr_info("Wakeup IRQ %d %s pending, suspend aborted\n",
+				pr_notice("Wakeup IRQ %d %s pending, suspend aborted\n",
 					irq,
 					desc->action && desc->action->name ?
 					desc->action->name : "");
