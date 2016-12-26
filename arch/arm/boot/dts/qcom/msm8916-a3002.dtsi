@@ -254,7 +254,7 @@
 		};
 	
 		red {
-			gpios = <&msm_gpio 49 0>;
+			gpios = <&msm_gpio 116 0>;
 			label = "red";
 			default-state = "off";
 			retain-state-suspended;

@@ -225,7 +225,7 @@
 			/* suspended state */
 			watchdog_pin_sleep: watchdog_pin_sleep {
 				drive-strength = <2>; /* 2 MA */
-				bias-pull-down; /* pull down */
+				bias-disable;
 			};
 		};
 

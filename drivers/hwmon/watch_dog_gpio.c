@@ -5,6 +5,7 @@
 #include <linux/module.h>
 
 #include <linux/init.h>
+#include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
@@ -26,6 +27,11 @@
 #include <linux/miscdevice.h>
 #include <linux/seq_file.h>
 
+struct rfkillpin_attr {
+    struct device_attribute attr;
+    char name[32];
+};
+
 struct watch_dog_pin_info{
 	int toggle_pin;
 	int port_det_pin;
@@ -38,8 +44,39 @@ struct watch_dog_pin_info{
     int rf_kill_pin;
     int rf_state;
     unsigned long open;
+    struct rfkillpin_attr attr_pin;
+    spinlock_t rfkillpin_lock;
+    unsigned long lock_flags;
 };
 
+
+static ssize_t rfkillpin_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int val;
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+    if (kstrtos32(buf, 10, &val))
+        return -EINVAL;
+
+    //val = ('0' == *buf)?0:1;
+
+    if(gpio_is_valid(wdi->rf_kill_pin)){
+        spin_lock_irqsave(&wdi->rfkillpin_lock, wdi->lock_flags);
+        gpio_set_value(wdi->rf_kill_pin, val);
+        wdi->rf_state = val;
+        spin_unlock_irqrestore(&wdi->rfkillpin_lock, wdi->lock_flags);
+        return count;
+    }
+
+	return -EINVAL;
+}
+
+static ssize_t rfkillpin_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+    return sprintf(buf, "%d\n", wdi->rf_state);
+}
 
 static ssize_t rfkillpin_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 {
@@ -206,7 +243,7 @@ static int watchdog_pin_probe(struct platform_device *op)
             return -ENOMEM;			
         }
         gpio_direction_output(inf->rf_kill_pin, 1);
-        inf->rf_state = 1;
+        inf->rf_state = 0;
     }
 	
 	rc = of_property_read_u32(np, "ehang,high-delay",
@@ -223,6 +260,7 @@ static int watchdog_pin_probe(struct platform_device *op)
 	dev_set_drvdata(dev, inf);
 
     inf->state = 0;
+    spin_lock_init(&inf->rfkillpin_lock);
 	
 	INIT_DELAYED_WORK(&inf->toggle_work,
 					watchdog_toggle_work);
@@ -234,6 +272,15 @@ static int watchdog_pin_probe(struct platform_device *op)
     inf->mdev.name	= "rf_kill_pin";
     inf->mdev.fops	= &rfkill_operations;
 	misc_register(&inf->mdev);
+
+    snprintf(inf->attr_pin.name, sizeof(inf->attr_pin.name) - 1, "rf_kill_pin");
+    inf->attr_pin.attr.attr.name = inf->attr_pin.name;
+    inf->attr_pin.attr.attr.mode = 0444;
+    inf->attr_pin.attr.show = rfkillpin_show;
+    inf->attr_pin.attr.store = rfkillpin_store;
+    sysfs_attr_init(&inf->attr_pin.attr.attr);
+    device_create_file(dev, &inf->attr_pin.attr);
+
 	return 0;
 }
 
@@ -247,7 +294,7 @@ static int watchdog_pin_suspend(struct device *dev)
     struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
 
     if(gpio_is_valid(wdi->rf_kill_pin)){
-        gpio_set_value(wdi->rf_kill_pin, 0);
+        gpio_set_value(wdi->rf_kill_pin, 1);
     }
 
     return 0;
