@@ -366,6 +366,10 @@
 		a8,plat-off-delay = <19000>;
 		status = "okay";
 	};
+	suspend_tm {
+		compatible = "suspend-timeout";
+		status = "okay";
+	};
 };
 
 /* add by shengweiguang for usb gadget 20150817 begin */
