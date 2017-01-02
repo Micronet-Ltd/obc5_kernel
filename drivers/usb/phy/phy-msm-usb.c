@@ -59,6 +59,7 @@
 
 #define ID_TIMER_FREQ		(jiffies + msecs_to_jiffies(500))
 #define CHG_RECHECK_DELAY	(jiffies + msecs_to_jiffies(2000))
+#define OTG_SUSPEND_WAKE_LOCK_DELAY 15000 //minimal suspend timeout
 #define ULPI_IO_TIMEOUT_USEC	(10 * 1000)
 #define USB_PHY_3P3_VOL_MIN	3050000 /* uV */
 #define USB_PHY_3P3_VOL_MAX	3300000 /* uV */
@@ -1696,7 +1697,11 @@ static int msm_otg_resume(struct msm_otg *motg)
 		motg->ui_enabled = 0;
 		disable_irq(motg->irq);
 	}
+#if (OTG_SUSPEND_WAKE_LOCK_DELAY)
+    wake_lock_timeout(&motg->wlock, msecs_to_jiffies(OTG_SUSPEND_WAKE_LOCK_DELAY));
+#else
 	wake_lock(&motg->wlock);
+#endif
 
 	/*
 	 * If we are resuming from the device bus suspend, restore
