@@ -1,5 +1,4 @@
 
-// by skj
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
 #include <linux/module.h>
@@ -43,6 +42,7 @@ struct watch_dog_pin_info{
     struct miscdevice mdev;
     int rf_kill_pin;
     int rf_state;
+	int suspend_ind;
     unsigned long open;
     struct rfkillpin_attr attr_pin;
     spinlock_t rfkillpin_lock;
@@ -243,17 +243,29 @@ static int watchdog_pin_probe(struct platform_device *op)
             return -ENOMEM;			
         }
         gpio_direction_output(inf->rf_kill_pin, 1);
-        inf->rf_state = 0;
+        inf->rf_state = 1;
     }
 	
-	rc = of_property_read_u32(np, "ehang,high-delay",
-						&inf->high_delay);
+	inf->suspend_ind = of_get_named_gpio(np,"ehang,suspend-ind-pin", 0);
+
+	if (gpio_is_valid(inf->suspend_ind)) {
+		rc = devm_gpio_request(dev, inf->suspend_ind, "suspend-ind-pin");
+		if (rc < 0) {
+			pr_err("suspend-ind-pin is busy\n");
+		} else {
+			gpio_direction_output(inf->suspend_ind, 0);
+			gpio_export(inf->suspend_ind, 0);
+		}
+	} else {
+		pr_err("invalid suspend-ind-pin\n");
+	}
+
+	rc = of_property_read_u32(np, "ehang,high-delay", &inf->high_delay);
 
 	if(rc<0)
 		inf->high_delay=1000;
 
-	rc = of_property_read_u32(np, "ehang,low-delay",
-						&inf->low_delay);
+	rc = of_property_read_u32(np, "ehang,low-delay", &inf->low_delay);
 	if(rc<0)
 		inf->low_delay=1000;	
 
@@ -289,12 +301,26 @@ static int watchdog_pin_remove(struct platform_device *op)
     return 0;
 }
 
+static int watchdog_pin_prepare(struct device *dev)
+{
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+	pr_notice("notify to mcu about suspend\n");
+
+	if(gpio_is_valid(wdi->suspend_ind)){
+        gpio_set_value(wdi->rf_kill_pin, wdi->suspend_ind^1);
+    }
+
+    return 0;
+}
+
 static int watchdog_pin_suspend(struct device *dev)
 {
     struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
 
     if(gpio_is_valid(wdi->rf_kill_pin)){
-        gpio_set_value(wdi->rf_kill_pin, 1);
+		pr_notice("shut down rf\n");
+        gpio_set_value(wdi->rf_kill_pin, wdi->rf_state^1);
     }
 
     return 0;
@@ -304,7 +330,13 @@ static int watchdog_pin_resume(struct device *dev)
 {
     struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
 
+	if(gpio_is_valid(wdi->suspend_ind)){
+		pr_notice("notify to mcu about resume\n");
+		gpio_set_value(wdi->rf_kill_pin, wdi->suspend_ind^1);
+	}
+
     if(gpio_is_valid(wdi->rf_kill_pin)){
+		pr_notice("restore rf-kill %d\n", wdi->rf_state);
         gpio_set_value(wdi->rf_kill_pin, wdi->rf_state);
     }
 
@@ -315,6 +347,7 @@ static const struct dev_pm_ops watchdog_pin_pm_ops =
 {
 	.suspend	= watchdog_pin_suspend,
 	.resume		= watchdog_pin_resume,
+	.prepare	= watchdog_pin_prepare,
 };
 
 static struct of_device_id watchdog_pin_match[] = {
