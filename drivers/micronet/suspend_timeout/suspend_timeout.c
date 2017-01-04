@@ -36,12 +36,15 @@ struct suspend_tm_data {
     struct miscdevice       mdev;
     unsigned long           open;
     uint32_t                to;
+    uint32_t                to_db;
     uint32_t                to_tmp;
     int32_t                 c;
     struct device_attribute dev_attr;
     struct device_attribute dev_attr_tmp;
     spinlock_t              dev_lock;
     unsigned long           lock_flags;
+    wait_queue_head_t       wq;
+    struct completion       completion;
 };
 
 static int test_timeout(uint32_t val)
@@ -69,6 +72,8 @@ static int suspend_tm_release(struct inode *inode, struct file *file)
     struct miscdevice *miscdev =  file->private_data;
     struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, mdev);
 
+    complete(&data->completion);
+
     pr_notice("\n");
     clear_bit(1, &data->open);
 
@@ -87,7 +92,7 @@ static ssize_t suspend_tm_read(struct file * file, char __user * buf, size_t cou
     }
     spin_lock_irqsave(&data->dev_lock, data->lock_flags);
     sprintf(output, "%d\n", data->to);
-    data->c  = 0;    
+    data->c  = 0;
     spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
 
     if(copy_to_user(buf, output, strlen(output)))
@@ -121,16 +126,18 @@ static ssize_t suspend_tm_write(struct file * file, const char __user * buf, siz
     val = simple_strtol(output, 0, 10);
     pr_info("output %s; val %d\n", output, val);
 
-    if(0 == test_timeout(val))
+    if(!isdigit(output[0]))//from db
     {
         pr_err("suspend timeout min = %u ms, max = %u, input %d\n", MIN_SUSPEND_TM, MAX_SUSPEND_TM, val);
-        return -EINVAL;
+        val = 0;
+        //set to user 0 //return -EINVAL;
     }
+    
     spin_lock_irqsave(&data->dev_lock, data->lock_flags); 
-    data->to = val;
-    data->c  = 1;    
+    data->to_db = val;
+    data->to = data->to_db;
     spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
-
+    complete(&data->completion);
     return count;
 }
 
@@ -141,10 +148,10 @@ static unsigned int suspend_tm_poll(struct file * file,  poll_table * wait)
 
     unsigned int mask = 0;
 
+    poll_wait(file, &data->wq, wait);
     spin_lock_irqsave(&data->dev_lock, data->lock_flags);
-//	poll_wait(file, &data->waitq, wait);
 	if(0 != data->c)
-            mask |= POLLIN | POLLRDNORM;
+        mask |= POLLIN | POLLRDNORM;
     spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
 
     return mask;
@@ -185,12 +192,18 @@ static ssize_t suspend_tm_set(struct device *dev, struct device_attribute *attr,
     {
         value = MAX_SUSPEND_TM;//for PowerManagerService
     }
+    if(data->to_db == value)
+        return count;
+
+    init_completion(&data->completion);
+
     spin_lock_irqsave(&data->dev_lock, data->lock_flags); 
-    if (data->to != value) {
-        data->to = value;
-        data->c  = 1;    
-    }
+    data->to = value;
+    data->c  = 1;    
     spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
+
+    wake_up(&data->wq);
+    wait_for_completion(&data->completion);
 
     return count;
 }
@@ -198,9 +211,13 @@ static ssize_t suspend_tm_set(struct device *dev, struct device_attribute *attr,
 static ssize_t suspend_tm_show(struct device* dev, struct device_attribute *attr, char *buf) 
 {
     struct suspend_tm_data* data = container_of(dev, struct suspend_tm_data, dev_f);
-    uint32_t value = data->to;
+    uint32_t value = 0;
 
-    pr_info("%d\n", (int32_t)data->to);
+    pr_notice("%d\n", (int32_t)data->to);
+
+    spin_lock_irqsave(&data->dev_lock, data->lock_flags); 
+    value = data->to_db;
+    spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
 
     if(MAX_SUSPEND_TM <= value)//for PowerManagerService 
     {
@@ -238,7 +255,6 @@ static void suspend_tm_delete(struct suspend_tm_data *data)
     misc_deregister(&data->mdev);
 }
 
-#ifdef CONFIG_OF
 static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
 {
     struct suspend_tm_data *data;
@@ -251,6 +267,8 @@ static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
         return ERR_PTR(-ENOMEM);
 
     spin_lock_init(&data->dev_lock);
+    init_waitqueue_head(&data->wq);
+    init_completion(&data->completion);
     //data->dev_f.parent = &pdev->dev;
     dev_set_name(&data->dev_f, "suspend_timeout");
 
@@ -262,7 +280,7 @@ static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
     }
 
     sysfs_attr_init(&data->dev_attr.attr);
-    data->dev_attr.attr.name = "suspend_timeout_val";
+    data->dev_attr.attr.name = "suspend_timeout_value";
     data->dev_attr.attr.mode = S_IRUGO | S_IWUGO;
 
     data->dev_attr.show = suspend_tm_show;
@@ -314,13 +332,6 @@ static const struct of_device_id of_suspend_tm_match[] = {
 	{ .compatible = "suspend-timeout", },
 	{},
 };
-#else
-static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
-{
-	return ERR_PTR(-ENODEV);
-}
-#endif
-
 
 static int suspend_tm_probe(struct platform_device *pdev)
 {
