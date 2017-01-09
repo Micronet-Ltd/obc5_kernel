@@ -3676,6 +3676,7 @@ static void android_disconnect(struct usb_composite_dev *cdev)
 	acc_disconnect();
 
 	dev->connected = 0;
+
 #if (ANDROID_USE_WAIT_LOCK)
         wake_unlock(&dev->wlock);
 #endif

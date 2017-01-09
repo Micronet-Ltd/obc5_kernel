@@ -197,8 +197,8 @@
 		};
 
 		power_lost {
-			qcom,pins = <&gp 89>;
-			qcom,num-grp-pins = <1>;
+			qcom,pins = <&gp 89>, <&gp 69>;
+			qcom,num-grp-pins = <2>;
 			qcom,pin-func = <0>;
 		        label = "power_lost";
 			power_lost_pin: default {
@@ -208,8 +208,8 @@
 		};
 
 		watchdog_pin_active {
-			qcom,pins = <&gp 2>, <&gp 9>;
-			qcom,num-grp-pins = <2>;
+			qcom,pins = <&gp 2>, <&gp 9>, <&gp 49>;
+			qcom,num-grp-pins = <3>;
 			qcom,pin-func = <0>;
 		        label = "watchdog_pin_active";
 			obc_watchdog_pin: default {
