@@ -49,6 +49,38 @@ struct watch_dog_pin_info{
     unsigned long lock_flags;
 };
 
+int proc_rf_kill_pin = -1;
+
+
+ssize_t proc_rfkillpin_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
+{
+	if (size >= 1 && 0 == *ppos) {
+		if (gpio_is_valid(proc_rf_kill_pin)) {
+			if (0 == gpio_get_value(proc_rf_kill_pin))
+				buf[0] = '0';	
+			else
+				buf[0] = '1';	
+		}else
+			buf[0] = 'e';
+
+		if (size >= 2) {
+			buf[1] = '\n';
+			(*ppos) += 2;
+
+			return 2;
+		}
+
+		(*ppos) ++;
+
+		return 1;
+	}
+
+	return 0;
+}
+
+static const struct file_operations proc_rfkill_operations = {
+	.read		= proc_rfkillpin_read,
+};
 
 static ssize_t rfkillpin_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -234,7 +266,7 @@ static int watchdog_pin_probe(struct platform_device *op)
 		}	
 	}	
 
-	inf->rf_kill_pin = of_get_named_gpio(np,"ehang,rf-kill-pin", 0);
+	proc_rf_kill_pin = inf->rf_kill_pin = of_get_named_gpio(np,"ehang,rf-kill-pin", 0);
 
     if (gpio_is_valid(inf->rf_kill_pin)) {
         rc = devm_gpio_request(dev,inf->rf_kill_pin,"rf-kill-pin");
@@ -293,6 +325,8 @@ static int watchdog_pin_probe(struct platform_device *op)
     sysfs_attr_init(&inf->attr_pin.attr.attr);
     device_create_file(dev, &inf->attr_pin.attr);
 
+	proc_create("rfkillpin", S_IRUSR | S_IRGRP | S_IROTH, 0, &proc_rfkill_operations);
+
 	return 0;
 }
 
@@ -308,7 +342,7 @@ static int watchdog_pin_prepare(struct device *dev)
 	pr_notice("notify to mcu about suspend\n");
 
 	if(gpio_is_valid(wdi->suspend_ind)){
-        gpio_set_value(wdi->rf_kill_pin, wdi->suspend_ind^1);
+        gpio_set_value(wdi->suspend_ind, wdi->suspend_ind^1);
     }
 
     return 0;
@@ -332,7 +366,7 @@ static int watchdog_pin_resume(struct device *dev)
 
 	if(gpio_is_valid(wdi->suspend_ind)){
 		pr_notice("notify to mcu about resume\n");
-		gpio_set_value(wdi->rf_kill_pin, wdi->suspend_ind^1);
+		gpio_set_value(wdi->suspend_ind, wdi->suspend_ind^1);
 	}
 
     if(gpio_is_valid(wdi->rf_kill_pin)){
