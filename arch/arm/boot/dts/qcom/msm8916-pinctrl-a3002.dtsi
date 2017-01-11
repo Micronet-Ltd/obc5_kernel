@@ -767,7 +767,7 @@
 		};
 
 		pmx_rd_nfc_int{
-			qcom,pins = <&gp 11>; // by skj
+			qcom,pins = <&gp 11>; /* by skj */
 			qcom,pin-func = <0>;
 			qcom,num-grp-pins = <1>;
 			label = "pmx_nfc_int";
