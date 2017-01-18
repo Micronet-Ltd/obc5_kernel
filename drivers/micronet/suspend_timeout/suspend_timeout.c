@@ -34,17 +34,26 @@ struct suspend_tm_data {
     struct device           dev;
     struct device           dev_f;
     struct miscdevice       mdev;
+    struct miscdevice       dev_ign_tm;
+    struct miscdevice       dev_ign_value;
     unsigned long           open;
+    //unsigned long           open_ign;
     uint32_t                to;
     uint32_t                to_db;
-    uint32_t                to_tmp;
+    uint32_t                to_ign;
+    uint32_t                to_ign_db;
+    uint32_t                ign_val;
     int32_t                 c;
+    int32_t                 c_ign;
     struct device_attribute dev_attr;
-    struct device_attribute dev_attr_tmp;
+    struct device_attribute dev_attr_ito;
+    struct device_attribute dev_attr_ign;
     spinlock_t              dev_lock;
     unsigned long           lock_flags;
     wait_queue_head_t       wq;
     struct completion       completion;
+    wait_queue_head_t       wq_ign;
+    struct completion       completion_ign;
 };
 
 static int test_timeout(uint32_t val)
@@ -55,7 +64,117 @@ static int test_timeout(uint32_t val)
     }
     return 1;
 }
+////
+static int ignition_tm_open(struct inode *inode, struct file *file)
+{
+    struct miscdevice *miscdev =  file->private_data;
+    struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, dev_ign_tm);
 
+    pr_notice("\n");
+    if(test_and_set_bit(2, &data->open))
+	return -EPERM;
+
+    return 0;
+}
+static int ignition_tm_release(struct inode *inode, struct file *file)
+{
+    struct miscdevice *miscdev =  file->private_data;
+    struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, dev_ign_tm);
+
+    pr_notice("\n");
+    complete(&data->completion_ign);
+
+    clear_bit(2, &data->open);
+
+    return 0;
+}
+static ssize_t ignition_tm_read(struct file * file, char __user * buf, size_t count, loff_t *ppos)
+{
+    struct miscdevice *miscdev =  file->private_data;
+    struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, dev_ign_tm);
+
+    uint8_t output[32];
+
+    pr_info("+\n");
+    if (0 == data->open) {//test_bit
+        return -EINVAL;
+    }
+    spin_lock_irqsave(&data->dev_lock, data->lock_flags);
+    sprintf(output, "%d\n", data->to_ign);
+    data->c_ign  = 0;
+    spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
+
+    if(copy_to_user(buf, output, strlen(output)))
+        return -EINVAL;
+
+    pr_info(": %s\n",output);
+
+    return strlen(output);//-'\n'
+}
+static ssize_t ignition_tm_write(struct file * file, const char __user * buf, size_t count, loff_t * ppos)
+{
+    struct miscdevice *miscdev =  file->private_data;
+    struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, dev_ign_tm);
+
+    uint8_t output[32] = {0};
+    uint32_t val;
+
+    pr_info("\n");
+
+    if (0 == data->open) {//test_bit
+        return -EINVAL;
+    }
+    if(count > sizeof(output)) {
+        pr_err("count %d too big\n", (int)count);
+        return -EINVAL;
+    }
+
+    if(copy_from_user(output, buf, min(count, sizeof(output))))
+        return -EACCES;
+
+    val = simple_strtol(output, 0, 10);
+    pr_info("output %s; val %d\n", output, val);
+
+    if(!isdigit(output[0]))//from db
+    {
+        pr_err("suspend timeout min = %u ms, max = %u, input %d\n", MIN_SUSPEND_TM, MAX_SUSPEND_TM, val);
+        val = 0;
+        //set to user 0 //return -EINVAL;
+    }
+    
+    spin_lock_irqsave(&data->dev_lock, data->lock_flags); 
+    data->to_ign_db = val;
+    data->to_ign = data->to_ign_db;
+    spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
+    complete(&data->completion_ign);
+    return count;
+}
+
+static unsigned int ignition_tm_poll(struct file * file,  poll_table * wait)
+{
+    struct miscdevice *miscdev =  file->private_data;
+    struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, dev_ign_tm);
+
+    unsigned int mask = 0;
+
+    poll_wait(file, &data->wq_ign, wait);
+    spin_lock_irqsave(&data->dev_lock, data->lock_flags);
+	if(0 != data->c_ign)
+        mask |= POLLIN | POLLRDNORM;
+    spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
+
+    return mask;
+}
+static const struct file_operations ignition_tm_dev_fops = {
+	.owner      = THIS_MODULE,
+	.llseek     = no_llseek,
+	.read       = ignition_tm_read,
+	.write      = ignition_tm_write,
+	.open       = ignition_tm_open,
+	.release    = ignition_tm_release,
+	.poll       = ignition_tm_poll,
+};
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 static int suspend_tm_open(struct inode *inode, struct file *file)
 {
     struct miscdevice *miscdev =  file->private_data;
@@ -87,7 +206,7 @@ static ssize_t suspend_tm_read(struct file * file, char __user * buf, size_t cou
     uint8_t output[32];
 
     pr_info("+\n");
-    if (0 == data->open) {
+    if (0 == data->open) { //test_bit
         return -EINVAL;
     }
     spin_lock_irqsave(&data->dev_lock, data->lock_flags);
@@ -156,7 +275,6 @@ static unsigned int suspend_tm_poll(struct file * file,  poll_table * wait)
 
     return mask;
 }
-
 static const struct file_operations suspend_tm_dev_fops = {
 	.owner      = THIS_MODULE,
 	.llseek     = no_llseek,
@@ -166,8 +284,63 @@ static const struct file_operations suspend_tm_dev_fops = {
 	.release    = suspend_tm_release,
 	.poll       = suspend_tm_poll,
 };
+///////////////////////////////////////////////////////////////////////////
+static int ign_open(struct inode *inode, struct file *file)
+{
+    return 0;
+}
+static int ign_release(struct inode *inode, struct file *file)
+{
+    return 0;
+}
+static ssize_t ign_read(struct file * file, char __user * buf, size_t count, loff_t *ppos)
+{
+    return 0;
+}
+static ssize_t ign_write(struct file * file, const char __user * buf, size_t count, loff_t * ppos)
+{
+    struct miscdevice *miscdev =  file->private_data;
+    struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, dev_ign_value);
+
+    uint8_t output[32] = {0};
+    uint32_t val;
+
+    pr_notice("\n");
+
+//    if (0 == data->open) {
+//        return -EINVAL;
+//    }
+    if(count > sizeof(output)) {
+        pr_err("count %d too big\n", (int)count);
+        return -EINVAL;
+    }
+
+    if(copy_from_user(output, buf, min(count, sizeof(output))))
+        return -EACCES;
+
+    val = simple_strtol(output, 0, 10);
+    pr_notice("output %s; val %d\n", output, val);
+
+    data->ign_val = val;
+    return count;
+}
+//static unsigned int ign_poll(struct file * file,  poll_table * wait)
+//{
+//    return 0;
+//}
+static const struct file_operations ign_dev_fops = {
+	.owner      = THIS_MODULE,
+	.llseek     = no_llseek,
+	.read       = ign_read,
+	.write      = ign_write,
+	.open       = ign_open,
+	.release    = ign_release,
+//	.poll       = ign_poll,
+};
+
 static ssize_t suspend_tm_set(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
+    int err;
     uint32_t value;
     struct suspend_tm_data* data = container_of(dev, struct suspend_tm_data, dev_f);
 
@@ -203,9 +376,10 @@ static ssize_t suspend_tm_set(struct device *dev, struct device_attribute *attr,
     spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
 
     wake_up(&data->wq);
-    wait_for_completion(&data->completion);
-
-    return count;
+    err = wait_for_completion_interruptible(&data->completion);
+    if (0 != err) 
+        return err;
+    return count; 
 }
 
 static ssize_t suspend_tm_show(struct device* dev, struct device_attribute *attr, char *buf) 
@@ -213,7 +387,7 @@ static ssize_t suspend_tm_show(struct device* dev, struct device_attribute *attr
     struct suspend_tm_data* data = container_of(dev, struct suspend_tm_data, dev_f);
     uint32_t value = 0;
 
-    pr_notice("%d\n", (int32_t)data->to);
+    pr_info("%d\n", (int32_t)data->to_db);
 
     spin_lock_irqsave(&data->dev_lock, data->lock_flags); 
     value = data->to_db;
@@ -225,34 +399,77 @@ static ssize_t suspend_tm_show(struct device* dev, struct device_attribute *attr
     }
     return sprintf(buf, "%d\n", value);
 }
-static ssize_t suspend_tm_tmp_set(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t ignition_tm_set(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
+    int err;
     uint32_t value;
     struct suspend_tm_data* data = container_of(dev, struct suspend_tm_data, dev_f);
 
-    pr_info("%s (count %u)\n", buf, (unsigned int)count);
-    if('\n' == buf[0]) {
-        return count;//skip
-    }
     value = simple_strtol(buf, 0, 10); 
-    data->to_tmp = value;
+    pr_info("%d (count %u)\n", value, (unsigned int)count);
+
+    //-1(never) or from 15000, 30000, 60000, 120000, 300000, 600000, 1800000
+    if(0 == test_timeout(value))
+    {
+        pr_err("suspend timeout min = %u ms, max = %u, input %d\n", MIN_SUSPEND_TM, MAX_SUSPEND_TM, value);
+        return -EINVAL;
+    }
+    if(-1 == (int32_t)value) 
+    {
+        value = MAX_SUSPEND_TM;//for PowerManagerService
+    }
+    if(data->to_ign_db == value)
+        return count;
+
+    init_completion(&data->completion_ign);
+
+    spin_lock_irqsave(&data->dev_lock, data->lock_flags); 
+    data->to_ign = value;
+    data->c_ign  = 1;    
+    spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
+
+    wake_up(&data->wq_ign);
+    err = wait_for_completion_interruptible(&data->completion_ign);
+    if (0 != err) 
+        return err;
 
     return count;
 }
 
-static ssize_t suspend_tm_tmp_show(struct device* dev, struct device_attribute *attr, char *buf) 
+static ssize_t ignition_tm_show(struct device* dev, struct device_attribute *attr, char *buf) 
 {
     struct suspend_tm_data* data = container_of(dev, struct suspend_tm_data, dev_f);
-    pr_info("%s: %u\n", __func__, data->to_tmp);
-    return sprintf(buf, "%d\n", (int32_t)data->to_tmp);
+    uint32_t value = 0;
+
+    pr_info("%d\n", (int32_t)data->to_ign_db);
+
+    spin_lock_irqsave(&data->dev_lock, data->lock_flags); 
+    value = data->to_ign_db;
+    spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
+
+    if(MAX_SUSPEND_TM <= value)//for PowerManagerService 
+    {
+        value = -1;
+    }
+    return sprintf(buf, "%d\n", value);
 }
+static ssize_t ignition_show(struct device* dev, struct device_attribute *attr, char *buf) 
+{
+    struct suspend_tm_data* data = container_of(dev, struct suspend_tm_data, dev_f);
+    pr_info("%s: %u\n", __func__, data->ign_val);
+    return sprintf(buf, "%d\n", (int32_t)data->ign_val);
+}
+
 static void suspend_tm_delete(struct suspend_tm_data *data)
 {
     device_remove_file(&data->dev_f, &data->dev_attr);
-    device_remove_file(&data->dev_f, &data->dev_attr_tmp);
+    device_remove_file(&data->dev_f, &data->dev_attr_ito);
+    device_remove_file(&data->dev_f, &data->dev_attr_ign);
     device_unregister(&data->dev_f);
 
     misc_deregister(&data->mdev);
+    misc_deregister(&data->dev_ign_tm);
+    misc_deregister(&data->dev_ign_value);
 }
 
 static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
@@ -269,6 +486,8 @@ static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
     spin_lock_init(&data->dev_lock);
     init_waitqueue_head(&data->wq);
     init_completion(&data->completion);
+    init_waitqueue_head(&data->wq_ign);
+    init_completion(&data->completion_ign);
     //data->dev_f.parent = &pdev->dev;
     dev_set_name(&data->dev_f, "suspend_timeout");
 
@@ -280,7 +499,7 @@ static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
     }
 
     sysfs_attr_init(&data->dev_attr.attr);
-    data->dev_attr.attr.name = "suspend_timeout_value";
+    data->dev_attr.attr.name = "suspend_timeout";
     data->dev_attr.attr.mode = S_IRUGO | S_IWUGO;
 
     data->dev_attr.show = suspend_tm_show;
@@ -293,18 +512,35 @@ static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
         kfree(data);
         return ERR_PTR(err);
     }
-    sysfs_attr_init(&data->dev_attr_tmp.attr);
-    data->dev_attr_tmp.attr.name = "suspend_timeout_tmp";
-    data->dev_attr_tmp.attr.mode = S_IRUGO | S_IWUGO;
 
-    data->dev_attr_tmp.show = suspend_tm_tmp_show;
-    data->dev_attr_tmp.store = suspend_tm_tmp_set;
+    sysfs_attr_init(&data->dev_attr_ito.attr);
+    data->dev_attr_ito.attr.name = "ignition_timeout";
+    data->dev_attr_ito.attr.mode = S_IRUGO | S_IWUGO;
 
-    err = device_create_file(&data->dev_f, &data->dev_attr_tmp);
+    data->dev_attr_ito.show = ignition_tm_show;
+    data->dev_attr_ito.store = ignition_tm_set;
+
+    err = device_create_file(&data->dev_f, &data->dev_attr_ito);
     if (err) {
-        dev_err(&pdev->dev, "could not create sysfs %s file\n", data->dev_attr_tmp.attr.name);
+        dev_err(&pdev->dev, "could not create sysfs %s file\n", data->dev_attr_ito.attr.name);
         device_unregister(&data->dev_f);
         device_remove_file(&data->dev_f, &data->dev_attr);
+        kfree(data);
+        return ERR_PTR(err);
+    }
+    sysfs_attr_init(&data->dev_attr_ign.attr);
+    data->dev_attr_ign.attr.name = "ignition_value";
+    data->dev_attr_ign.attr.mode = S_IRUGO;
+
+    data->dev_attr_ign.show = ignition_show;
+    data->dev_attr_ign.store = NULL;
+
+    err = device_create_file(&data->dev_f, &data->dev_attr_ign);
+    if (err) {
+        dev_err(&pdev->dev, "could not create sysfs %s file\n", data->dev_attr_ign.attr.name);
+        device_remove_file(&data->dev_f, &data->dev_attr);
+        device_remove_file(&data->dev_f, &data->dev_attr_ito);
+        device_unregister(&data->dev_f);
         kfree(data);
         return ERR_PTR(err);
     }
@@ -317,11 +553,49 @@ static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
 
     err = misc_register(&data->mdev);
     if(err) {
-        device_unregister(&data->dev_f);
         device_remove_file(&data->dev_f, &data->dev_attr);
-        device_remove_file(&data->dev_f, &data->dev_attr_tmp);
+        device_remove_file(&data->dev_f, &data->dev_attr_ito);
+        device_remove_file(&data->dev_f, &data->dev_attr_ign);
+        device_unregister(&data->dev_f);
         kfree(data);
-        pr_notice("%s: failure to register misc device, err %d\n", __func__, err);
+        pr_err("%s: failure to register misc device, err %d\n", __func__, err);
+        return ERR_PTR(err);
+    }
+
+    data->dev_ign_tm.minor  = MISC_DYNAMIC_MINOR;
+    data->dev_ign_tm.name	= "ignition_timeout";
+    data->dev_ign_tm.fops	= &ignition_tm_dev_fops;
+
+//    pr_notice("%s: register %s\n", __func__, led->mdev.name);
+
+    err = misc_register(&data->dev_ign_tm);
+    if(err) {
+        misc_deregister(&data->mdev);
+        device_remove_file(&data->dev_f, &data->dev_attr);
+        device_remove_file(&data->dev_f, &data->dev_attr_ito);
+        device_remove_file(&data->dev_f, &data->dev_attr_ign);
+        device_unregister(&data->dev_f);
+        kfree(data);
+        pr_err("%s: failure to register misc device, err %d\n", __func__, err);
+        return ERR_PTR(err);
+    }
+
+    data->dev_ign_value.minor = MISC_DYNAMIC_MINOR;
+    data->dev_ign_value.name	= "ignition_value";
+    data->dev_ign_value.fops	= &ign_dev_fops;
+
+//    pr_notice("%s: register %s\n", __func__, led->mdev.name);
+
+    err = misc_register(&data->dev_ign_value);
+    if(err) {
+        misc_deregister(&data->mdev);
+        misc_deregister(&data->dev_ign_tm);
+        device_remove_file(&data->dev_f, &data->dev_attr);
+        device_remove_file(&data->dev_f, &data->dev_attr_ito);
+        device_remove_file(&data->dev_f, &data->dev_attr_ign);
+        device_unregister(&data->dev_f);
+        kfree(data);
+        pr_err("%s: failure to register misc device, err %d\n", __func__, err);
         return ERR_PTR(err);
     }
 
@@ -373,6 +647,6 @@ static struct platform_driver suspend_tm_driver = {
 module_platform_driver(suspend_tm_driver);
 
 MODULE_AUTHOR("Igor Lantsman <igor.lantsman@micronet-inc.com>");
-MODULE_DESCRIPTION("MCU host interface based LED driver");
+MODULE_DESCRIPTION("Suspend and shutdown timeouts");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:suspend_tm");
