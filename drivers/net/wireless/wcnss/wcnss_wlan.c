@@ -2699,7 +2699,7 @@ wcnss_trigger_config(struct platform_device *pdev)
 {
 	int ret;
 	int rc;
-//	struct clk *snoc_qosgen;
+	struct clk *snoc_qosgen;
 	struct qcom_wcnss_opts *pdata;
 	struct resource *res;
 	int is_pronto_vt;
