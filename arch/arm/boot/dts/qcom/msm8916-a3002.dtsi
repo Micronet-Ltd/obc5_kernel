@@ -407,15 +407,7 @@
 			linux,code = <115>;
 			gpio-key,wakeup;
 			debounce-interval = <15>;
-		};/*
-		obc_key {
-			label = "obc_key";
-			gpios = <&msm_gpio 112 0x1>;
-			linux,input-type = <1>;
-			linux,code = <60>;
-			gpio-key,wakeup;
-			debounce-interval = <15>;
-		};*/	
+		};
 	};
 };
 
