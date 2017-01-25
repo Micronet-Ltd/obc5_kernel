@@ -171,3 +171,5 @@ obj-$(CONFIG_SENSORS_SSC)	+= sensors/
 
 #Micronet
 obj-y                          += micronet/accel/
+obj-$(CONFIG_MICRONET_SUSPEND) += micronet/suspend_timeout/
+
