@@ -289,6 +289,7 @@ static int watchdog_pin_probe(struct platform_device *op)
 			gpio_export(inf->suspend_ind, 0);
 		}
 	} else {
+        inf->suspend_ind = -1;
 		pr_err("invalid suspend-ind-pin\n");
 	}
 
@@ -306,11 +307,16 @@ static int watchdog_pin_probe(struct platform_device *op)
     inf->state = 0;
     spin_lock_init(&inf->rfkillpin_lock);
 	
-	INIT_DELAYED_WORK(&inf->toggle_work,
-					watchdog_toggle_work);
+    if (inf->high_delay || inf->low_delay) {
+        INIT_DELAYED_WORK(&inf->toggle_work,
+                        watchdog_toggle_work);
 
-	schedule_delayed_work(&inf->toggle_work,
-		msecs_to_jiffies(inf->low_delay));	
+        schedule_delayed_work(&inf->toggle_work,
+            msecs_to_jiffies(inf->low_delay));	
+    } else {
+        inf->state = 1;
+        gpio_set_value(inf->toggle_pin, inf->state);
+    }
 
     inf->mdev.minor = MISC_DYNAMIC_MINOR;
     inf->mdev.name	= "rf_kill_pin";
@@ -352,6 +358,10 @@ static int watchdog_pin_suspend(struct device *dev)
 {
     struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
 
+    if (!(wdi->high_delay || wdi->low_delay) && gpio_is_valid(wdi->toggle_pin)) {
+        gpio_set_value(wdi->toggle_pin, wdi->state^1);
+    }
+
     if(gpio_is_valid(wdi->rf_kill_pin)){
 		pr_notice("shut down rf\n");
         gpio_set_value(wdi->rf_kill_pin, wdi->rf_state^1);
@@ -363,6 +373,10 @@ static int watchdog_pin_suspend(struct device *dev)
 static int watchdog_pin_resume(struct device *dev)
 {
     struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+    if (!(wdi->high_delay || wdi->low_delay) && gpio_is_valid(wdi->toggle_pin)) {
+        gpio_set_value(wdi->toggle_pin, wdi->state);
+    }
 
 	if(gpio_is_valid(wdi->suspend_ind)){
 		pr_notice("notify to mcu about resume\n");

@@ -277,11 +277,11 @@
 		pinctrl-0 = <&obc_watchdog_pin>;		
 		pinctrl-1 = <&watchdog_pin_sleep>;		
 		ehang,toggle-pin = <&msm_gpio 2 0>;
+		ehang,port-det-pin = <&msm_gpio 69 0>;
 		ehang,rf-kill-pin = <&msm_gpio 9 0>;
-		ehang,suspend-ind-pin = <&msm_gpio 49 0>;
 		ehang,usb-switch-pin = <&msm_gpio 15 0>;
-		ehang,high-delay=<1000>;
-		ehang,low-delay=<5000>;
+		ehang,high-delay=<0>;
+		ehang,low-delay=<0>;
 	};
 	sound {
 		compatible = "qcom,msm8x16-audio-codec";
@@ -356,6 +356,7 @@
 		qcom,ext-spk-amp-gpio = <&msm_gpio 16 0>;
 		qcom,hp-spk-switch-gpio = <&msm_gpio 3 0>;
 	};
+/*
 	a8_power_lost_hm {
 		compatible = "a8-hm-power-lost";
 		pinctrl-names = "default";
@@ -370,6 +371,7 @@
 		a8,plat-off-delay = <19000>;
 		status = "okay";
 	};
+*/
 };
 
 /* add by shengweiguang for usb gadget 20150817 begin */
