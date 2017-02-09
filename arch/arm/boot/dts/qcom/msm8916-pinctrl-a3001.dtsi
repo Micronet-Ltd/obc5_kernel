@@ -195,7 +195,7 @@
 				bias-disable;
 			};
 		};
-
+/*
 		power_lost {
 			qcom,pins = <&gp 89>, <&gp 69>;
 			qcom,num-grp-pins = <2>;
@@ -206,10 +206,10 @@
 				bias-disable;
 			};
 		};
-
+*/
 		watchdog_pin_active {
-			qcom,pins = <&gp 2>, <&gp 9>, <&gp 49>;
-			qcom,num-grp-pins = <3>;
+			qcom,pins = <&gp 2>, <&gp 9>;
+			qcom,num-grp-pins = <2>;
 			qcom,pin-func = <0>;
 		        label = "watchdog_pin_active";
 			obc_watchdog_pin: default {
@@ -767,7 +767,7 @@
 		};
 
 		pmx_rd_nfc_int{
-			qcom,pins = <&gp 11>; // by skj
+			qcom,pins = <&gp 11>; /* by skj */
 			qcom,pin-func = <0>;
 			qcom,num-grp-pins = <1>;
 			label = "pmx_nfc_int";
