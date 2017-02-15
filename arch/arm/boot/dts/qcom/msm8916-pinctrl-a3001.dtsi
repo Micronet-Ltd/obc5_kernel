@@ -149,7 +149,7 @@
 				bias-pull-down;
 			};
 		};
-		// by skj
+		/* by skj */
 		pmx-uartconsole1 {
 			qcom,pins = <&gp 0>, <&gp 1>;
 			qcom,num-grp-pins = <2>;
@@ -162,8 +162,8 @@
 			};
 		};
 		blsp1_uart1_active {
-			qcom,pins = <&gp 0>, <&gp 1>, <&gp 2>, <&gp 3>;
-			qcom,num-grp-pins = <4>;
+			qcom,pins = <&gp 0>, <&gp 1>, <&gp 3>;
+			qcom,num-grp-pins = <3>;
 			qcom,pin-func = <2>;
 		        label = "blsp1_uart1_active";
 
@@ -174,8 +174,8 @@
 		};
 
 		blsp1_uart1_sleep {
-			qcom,pins = <&gp 0>, <&gp 1>, <&gp 2>, <&gp 3>;
-			qcom,num-grp-pins = <4>;
+			qcom,pins = <&gp 0>, <&gp 1>, <&gp 3>;
+			qcom,num-grp-pins = <3>;
 			qcom,pin-func = <0>;
 		        label = "blsp1_uart1_sleep";
 
@@ -217,6 +217,7 @@
 				bias-disable;
 			};
 		};
+
 		watchdog_pin_suspend {
 			qcom,pins = <&gp 2>, <&gp 9>;
 			qcom,num-grp-pins = <2>;
@@ -1228,7 +1229,7 @@
 		};
 
 		gpio_led_pins {
-			qcom,pins = <&gp 116>, <&gp 117>, <&gp 108>; // by skj a3001
+			qcom,pins = <&gp 116>, <&gp 117>, <&gp 108>; /* by skj a3001*/
 			qcom,num-grp-pins = <3>;
 			label = "gpio-led-pins";
 			gpio_led_off: led_off {

@@ -275,13 +275,13 @@
 		compatible = "ehang,watchdog-pin";
 		pinctrl-names = "default", "watchdog_pin_sleep";
 		pinctrl-0 = <&obc_watchdog_pin>;		
-		pinctrl-1 = <&watchdog_pin_sleep>;		
+		pinctrl-1 = <&watchdog_pin_sleep>;
 		ehang,toggle-pin = <&msm_gpio 2 0>;
 		ehang,port-det-pin = <&msm_gpio 69 0>;
 		ehang,rf-kill-pin = <&msm_gpio 9 0>;
 		ehang,usb-switch-pin = <&msm_gpio 15 0>;
-		ehang,high-delay=<0>;
-		ehang,low-delay=<0>;
+		ehang,high-delay=<1000>;
+		ehang,low-delay=<1000>;
 	};
 	sound {
 		compatible = "qcom,msm8x16-audio-codec";
