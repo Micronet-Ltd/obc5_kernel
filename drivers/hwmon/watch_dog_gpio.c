@@ -1,10 +1,10 @@
 
-// by skj
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
 #include <linux/module.h>
 
 #include <linux/init.h>
+#include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
@@ -23,8 +23,13 @@
 #include <linux/of_gpio.h>
 #include <linux/spinlock.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/proc_fs.h>
+#include <linux/miscdevice.h>
 #include <linux/seq_file.h>
+
+struct rfkillpin_attr {
+    struct device_attribute attr;
+    char name[32];
+};
 
 struct watch_dog_pin_info{
 	int toggle_pin;
@@ -34,34 +39,186 @@ struct watch_dog_pin_info{
 	int low_delay;
 	struct delayed_work	toggle_work;
 	int state; // high=1 low=0
+    struct miscdevice mdev;
+    int rf_kill_pin;
+    int rf_state;
+	int suspend_ind;
+    unsigned long open;
+    struct rfkillpin_attr attr_pin;
+    struct rfkillpin_attr attr_toggle;
+    spinlock_t rfkillpin_lock;
+    unsigned long lock_flags;
+    int suspend;
 };
 
-int rf_kill_pin=(-1);
+int proc_rf_kill_pin = -1;
 
-ssize_t rfkillpin_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
+
+ssize_t proc_rfkillpin_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 {
-
-	if(size>=1 && 0==*ppos){
-		if(gpio_is_valid(rf_kill_pin)){
-			if(0==gpio_get_value(rf_kill_pin))
-				buf[0]='0';	
+	if (size >= 1 && 0 == *ppos) {
+		if (gpio_is_valid(proc_rf_kill_pin)) {
+			if (0 == gpio_get_value(proc_rf_kill_pin))
+				buf[0] = '0';	
 			else
-				buf[0]='1';	
+				buf[0] = '1';	
 		}else
-			buf[0]='e';	
-		if(size>=2){
-			buf[1]='\n';
-			*ppos=*ppos+2;
+			buf[0] = 'e';
+
+		if (size >= 2) {
+			buf[1] = '\n';
+			(*ppos) += 2;
+
 			return 2;
 		}
-		*ppos=*ppos+1;
+
+		(*ppos) ++;
+
 		return 1;
 	}
+
 	return 0;
 }
 
 static const struct file_operations proc_rfkill_operations = {
+	.read		= proc_rfkillpin_read,
+};
+
+static ssize_t rfkillpin_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int val;
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+    if (kstrtos32(buf, 10, &val))
+        return -EINVAL;
+
+    //val = ('0' == *buf)?0:1;
+
+    if(gpio_is_valid(wdi->rf_kill_pin)){
+        spin_lock_irqsave(&wdi->rfkillpin_lock, wdi->lock_flags);
+        gpio_set_value(wdi->rf_kill_pin, val);
+        wdi->rf_state = val;
+        spin_unlock_irqrestore(&wdi->rfkillpin_lock, wdi->lock_flags);
+        return count;
+    }
+
+	return -EINVAL;
+}
+
+static ssize_t rfkillpin_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+    return sprintf(buf, "%d\n", wdi->rf_state);
+}
+
+static ssize_t toggle_active_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    int val;
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+    pr_notice("%s\n", buf);
+    if (kstrtos32(buf, 10, &val))
+        return -EINVAL;
+
+    pr_notice("%d\n", val);
+    if (gpio_is_valid(wdi->toggle_pin)) {
+        if (val == !wdi->suspend) {
+            pr_notice("eq nothing to do\n");
+            return count;
+        }
+
+        if (0 == wdi->suspend) {
+            cancel_delayed_work_sync(&wdi->toggle_work);
+        }
+
+        spin_lock_irqsave(&wdi->rfkillpin_lock, wdi->lock_flags);
+        wdi->suspend = !val;
+        spin_unlock_irqrestore(&wdi->rfkillpin_lock, wdi->lock_flags);
+
+        schedule_delayed_work(&wdi->toggle_work, 0);	
+        return count;
+    }
+
+	return -EINVAL;
+}
+
+static ssize_t toggle_active_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+    return sprintf(buf, "%d\n", (0 == wdi->suspend));
+}
+
+static ssize_t rfkillpin_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
+{
+    int val;
+    struct miscdevice *md =  file->private_data;
+    struct watch_dog_pin_info *wdi = container_of(md, struct watch_dog_pin_info, mdev);
+
+    if (1 == count) {
+        val = ('0' == *buf)?0:1;
+
+		if(gpio_is_valid(wdi->rf_kill_pin)){
+			gpio_set_value(wdi->rf_kill_pin, val);
+            wdi->rf_state = val;
+            return count;
+		}
+	}
+
+	return 0;
+}
+
+static ssize_t rfkillpin_read(struct file * file, char __user * buf, size_t count, loff_t *ppos)
+{
+    struct miscdevice *md =  file->private_data;
+    struct watch_dog_pin_info *wdi = container_of(md, struct watch_dog_pin_info, mdev);
+
+    if (0 == wdi->open) {
+        return -EINVAL;
+    }
+
+    if (1 != count) {
+		printk("%s: buffer too small\n", __func__);
+		return -EINVAL;
+	}
+
+    *buf = '0' + wdi->rf_state;
+
+    if (ppos) {
+        *ppos = 0;
+    }
+
+    return count;
+}
+
+static int rfkillpin_open(struct inode *inode, struct file *file)
+{
+    struct miscdevice *md =  file->private_data;
+	struct watch_dog_pin_info *wdi = container_of(md, struct watch_dog_pin_info, mdev);
+
+	if(test_and_set_bit(1, &wdi->open))
+		return -EPERM;
+
+	return 0;
+}
+
+static int rfkillpin_release(struct inode *inode, struct file *file)
+{
+    struct miscdevice *md =  file->private_data;
+    struct watch_dog_pin_info *wdi = container_of(md, struct watch_dog_pin_info, mdev);
+
+	clear_bit(1, &wdi->open);
+
+	return 0;
+}
+
+static const struct file_operations rfkill_operations = {
+    .owner      = THIS_MODULE,
 	.read		= rfkillpin_read,
+    .write      = rfkillpin_write,
+    .open       = rfkillpin_open,
+    .release    = rfkillpin_release,
 };
 
 static void watchdog_toggle_work(struct work_struct *work)
@@ -71,7 +228,12 @@ static void watchdog_toggle_work(struct work_struct *work)
 				toggle_work.work);
     unsigned long d;
 
-    inf->state ^= 1;
+    if (0 != inf->suspend) {
+        gpio_set_value(inf->toggle_pin, 0);
+        return;
+    }
+
+    inf->state ^= 1; 
     d = (inf->state)?inf->high_delay:inf->low_delay;
     gpio_set_value(inf->toggle_pin, inf->state);
     schedule_delayed_work(&inf->toggle_work,msecs_to_jiffies(d));
@@ -81,6 +243,7 @@ static irqreturn_t port_det_handler(int irq, void *dev_id)
 {
 	struct watch_dog_pin_info *inf=dev_id;
 
+    pr_notice("[%d]\n", gpio_get_value(inf->port_det_pin));
 	if(0==gpio_get_value(inf->port_det_pin))
 		gpio_direction_output(inf->usb_switch_pin,0);	
 	else
@@ -115,7 +278,6 @@ static int watchdog_pin_probe(struct platform_device *op)
 		dev_err(dev, "toggle pin is busy!\n");
 		return -ENOMEM;			
 	}
-	gpio_direction_output(inf->toggle_pin,0);
 
 	inf->port_det_pin=
 		of_get_named_gpio(np,"ehang,port-det-pin",0);
@@ -136,6 +298,8 @@ static int watchdog_pin_probe(struct platform_device *op)
 			gpio_direction_output(inf->usb_switch_pin,0);	
 		else
 			gpio_direction_output(inf->usb_switch_pin,1);
+        gpio_export(inf->usb_switch_pin, 0);
+        gpio_export(inf->port_det_pin, 0);
 
 		irq= gpio_to_irq(inf->port_det_pin);
 		rc = devm_request_threaded_irq(dev, irq, NULL,
@@ -149,47 +313,166 @@ static int watchdog_pin_probe(struct platform_device *op)
 		}	
 	}	
 
-	rf_kill_pin=of_get_named_gpio(np,"ehang,rf-kill-pin",0);
+	proc_rf_kill_pin = inf->rf_kill_pin = of_get_named_gpio(np,"ehang,rf-kill-pin", 0);
+
+    if (gpio_is_valid(inf->rf_kill_pin)) {
+        rc = devm_gpio_request(dev,inf->rf_kill_pin,"rf-kill-pin");
+        if (rc < 0) {
+            dev_err(dev, "rf-kill-pin is busy!\n");
+            return -ENOMEM;			
+        }
+        gpio_direction_output(inf->rf_kill_pin, 1);
+        gpio_export(inf->rf_kill_pin, 0);
+        inf->rf_state = 1;
+    }
 	
-	rc = of_property_read_u32(np, "ehang,high-delay",
-						&inf->high_delay);
+	inf->suspend_ind = of_get_named_gpio(np,"ehang,suspend-ind-pin", 0);
+
+	if (gpio_is_valid(inf->suspend_ind)) {
+		rc = devm_gpio_request(dev, inf->suspend_ind, "suspend-ind-pin");
+		if (rc < 0) {
+			pr_err("suspend-ind-pin is busy\n");
+		} else {
+			gpio_direction_output(inf->suspend_ind, 0);
+			gpio_export(inf->suspend_ind, 0);
+		}
+	} else {
+        inf->suspend_ind = -1;
+		pr_err("invalid suspend-ind-pin\n");
+	}
+
+	rc = of_property_read_u32(np, "ehang,high-delay", &inf->high_delay);
 
 	if(rc<0)
 		inf->high_delay=1000;
 
-	rc = of_property_read_u32(np, "ehang,low-delay",
-						&inf->low_delay);
+	rc = of_property_read_u32(np, "ehang,low-delay", &inf->low_delay);
 	if(rc<0)
 		inf->low_delay=1000;	
 
 	dev_set_drvdata(dev, inf);
 
-    inf->state=0;
+    spin_lock_init(&inf->rfkillpin_lock);
 	
-	INIT_DELAYED_WORK(&inf->toggle_work,
-					watchdog_toggle_work);
+    inf->state = 0;
+    if (inf->high_delay == inf->low_delay) {
+        inf->suspend = -1;
+    } else {
+        inf->suspend = 0;
+    }
+    gpio_direction_output(inf->toggle_pin, inf->state);
+    gpio_export(inf->toggle_pin, 0);
+    pr_notice("init toggle pin[%d]\n", inf->state);
+    if (inf->high_delay || inf->low_delay) {
+        pr_notice("launch toggle work[%d]\n", inf->state);
+        INIT_DELAYED_WORK(&inf->toggle_work, watchdog_toggle_work);
+        schedule_delayed_work(&inf->toggle_work, msecs_to_jiffies(inf->low_delay));	
+    } else {
+        inf->state = 1;
+        gpio_set_value(inf->toggle_pin, inf->state);
+        pr_notice("notify to cradle PON[%d]\n", inf->state);
+    }
 
-	schedule_delayed_work(&inf->toggle_work,
-		msecs_to_jiffies(inf->low_delay));	
+    inf->mdev.minor = MISC_DYNAMIC_MINOR;
+    inf->mdev.name	= "rf_kill_pin";
+    inf->mdev.fops	= &rfkill_operations;
+	misc_register(&inf->mdev);
 
-	proc_create("rfkillpin", S_IRUSR | S_IRGRP | S_IROTH, NULL, &proc_rfkill_operations);
+    snprintf(inf->attr_pin.name, sizeof(inf->attr_pin.name) - 1, "rf_kill_pin");
+    inf->attr_pin.attr.attr.name = inf->attr_pin.name;
+    inf->attr_pin.attr.attr.mode = 0444;
+    inf->attr_pin.attr.show = rfkillpin_show;
+    inf->attr_pin.attr.store = rfkillpin_store;
+    sysfs_attr_init(&inf->attr_pin.attr.attr);
+    device_create_file(dev, &inf->attr_pin.attr);
+
+    snprintf(inf->attr_toggle.name, sizeof(inf->attr_toggle.name) - 1, "wd_toggle_active");
+    inf->attr_toggle.attr.attr.name = inf->attr_toggle.name;
+    inf->attr_toggle.attr.attr.mode = 0664;
+    inf->attr_toggle.attr.show = toggle_active_show;
+    inf->attr_toggle.attr.store = toggle_active_store;
+    sysfs_attr_init(&inf->attr_toggle.attr.attr);
+    device_create_file(dev, &inf->attr_toggle.attr);
+
+    proc_create("rfkillpin", S_IRUSR | S_IRGRP | S_IROTH, 0, &proc_rfkill_operations);
+
 	return 0;
 }
 
 static int watchdog_pin_remove(struct platform_device *op)
 {
+    return 0;
+}
+
+static int watchdog_pin_prepare(struct device *dev)
+{
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+	pr_notice("notify to mcu about suspend\n");
+
+    if (gpio_is_valid(wdi->toggle_pin)) {
+        pr_notice("stop wd [%d]\n", wdi->state);
+        spin_lock_irqsave(&wdi->rfkillpin_lock, wdi->lock_flags);
+        wdi->suspend = 1;
+        spin_unlock_irqrestore(&wdi->rfkillpin_lock, wdi->lock_flags);
+        schedule_delayed_work(&wdi->toggle_work, 0);	
+    }
+
+	if(gpio_is_valid(wdi->suspend_ind)){
+        gpio_set_value(wdi->suspend_ind, wdi->suspend_ind^1);
+    }
+
+    return 0;
+}
+
+static int watchdog_pin_suspend(struct device *dev)
+{
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+    if (gpio_is_valid(wdi->toggle_pin)) {
+        pr_notice("notify to cradle about suspend[%d]\n", wdi->state);
+        gpio_set_value(wdi->toggle_pin, 0);
+    }
+
+    if(gpio_is_valid(wdi->rf_kill_pin)){
+		pr_notice("shut down rf\n");
+        gpio_set_value(wdi->rf_kill_pin, wdi->rf_state^1);
+    }
+
+    return 0;
+}
+
+static int watchdog_pin_resume(struct device *dev)
+{
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
+
+    if (gpio_is_valid(wdi->toggle_pin)) {
+        pr_notice("start wd [%d]\n", wdi->state);
+        spin_lock_irqsave(&wdi->rfkillpin_lock, wdi->lock_flags);
+        wdi->suspend = 0;
+        spin_unlock_irqrestore(&wdi->rfkillpin_lock, wdi->lock_flags);
+        schedule_delayed_work(&wdi->toggle_work, 0);	
+    }
+
+	if(gpio_is_valid(wdi->suspend_ind)){
+		pr_notice("notify to mcu about resume\n");
+		gpio_set_value(wdi->suspend_ind, wdi->suspend_ind^1);
+	}
+
+    if(gpio_is_valid(wdi->rf_kill_pin)){
+		pr_notice("restore rf-kill %d\n", wdi->rf_state);
+        gpio_set_value(wdi->rf_kill_pin, wdi->rf_state);
+    }
+
 	return 0;
 }
 
-static int watchdog_pin_suspend(struct platform_device *op, pm_message_t message)
+static const struct dev_pm_ops watchdog_pin_pm_ops =
 {
-	return 0;
-}
-
-static int watchdog_pin_resume(struct platform_device *op)
-{
-	return 0;
-}
+	.suspend	= watchdog_pin_suspend,
+	.resume		= watchdog_pin_resume,
+	.prepare	= watchdog_pin_prepare,
+};
 
 static struct of_device_id watchdog_pin_match[] = {
 	{ .compatible = "ehang,watchdog-pin", },
@@ -199,12 +482,11 @@ static struct of_device_id watchdog_pin_match[] = {
 static struct platform_driver watchdog_pin_driver = {
 	.probe		= watchdog_pin_probe,
 	.remove		= watchdog_pin_remove,
-	.suspend	= watchdog_pin_suspend,
-	.resume		= watchdog_pin_resume,	
 	.driver		= {
 		.name = "watchdog-pin",
 		.owner = THIS_MODULE,
 		.of_match_table = watchdog_pin_match,
+        .pm = &watchdog_pin_pm_ops,
 	},
 };
 

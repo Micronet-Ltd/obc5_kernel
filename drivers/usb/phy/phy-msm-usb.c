@@ -59,6 +59,7 @@
 
 #define ID_TIMER_FREQ		(jiffies + msecs_to_jiffies(500))
 #define CHG_RECHECK_DELAY	(jiffies + msecs_to_jiffies(2000))
+#define OTG_SUSPEND_WAKE_LOCK_DELAY 15000 //minimal suspend timeout
 #define ULPI_IO_TIMEOUT_USEC	(10 * 1000)
 #define USB_PHY_3P3_VOL_MIN	3050000 /* uV */
 #define USB_PHY_3P3_VOL_MAX	3300000 /* uV */
@@ -1696,7 +1697,11 @@ static int msm_otg_resume(struct msm_otg *motg)
 		motg->ui_enabled = 0;
 		disable_irq(motg->irq);
 	}
+#if (OTG_SUSPEND_WAKE_LOCK_DELAY)
+    wake_lock_timeout(&motg->wlock, msecs_to_jiffies(OTG_SUSPEND_WAKE_LOCK_DELAY));
+#else
 	wake_lock(&motg->wlock);
+#endif
 
 	/*
 	 * If we are resuming from the device bus suspend, restore
@@ -4303,7 +4308,7 @@ static void msm_id_status_w(struct work_struct *w)
 		if (gpio_is_valid(motg->pdata->switch_sel_gpio))
 			gpio_direction_input(motg->pdata->switch_sel_gpio);
 		if (!test_and_set_bit(ID, &motg->inputs)) {
-			pr_debug("ID set\n");
+			pr_notice("%s: ID set\n", __func__);
 			msm_otg_dbg_log_event(&motg->phy, "ID SET",
 					motg->inputs, motg->phy.state);
 			work = 1;
@@ -4312,7 +4317,7 @@ static void msm_id_status_w(struct work_struct *w)
 		if (gpio_is_valid(motg->pdata->switch_sel_gpio))
 			gpio_direction_output(motg->pdata->switch_sel_gpio, 1);
 		if (test_and_clear_bit(ID, &motg->inputs)) {
-			pr_debug("ID clear\n");
+			pr_notice("%s: ID clear\n", __func__);
 			msm_otg_dbg_log_event(&motg->phy, "ID CLEAR",
 					motg->inputs, motg->phy.state);
 			set_bit(A_BUS_REQ, &motg->inputs);

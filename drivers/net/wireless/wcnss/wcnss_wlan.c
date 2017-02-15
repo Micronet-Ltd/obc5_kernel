@@ -10,6 +10,7 @@
  * GNU General Public License for more details.
  */
 
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
 #include <linux/module.h>
 #include <linux/firmware.h>
 #include <linux/slab.h>
@@ -1297,7 +1298,7 @@ wcnss_pinctrl_set_state(bool active)
 	struct pinctrl_state *pin_state;
 	int ret;
 
-	pr_debug("%s: Set GPIO state : %d\n", __func__, active);
+	pr_notice("select pinctl %d\n", active);
 
 	pin_state = active ? penv->wcnss_5wire_active
 			: penv->wcnss_5wire_suspend;
@@ -1305,14 +1306,12 @@ wcnss_pinctrl_set_state(bool active)
 	if (!IS_ERR_OR_NULL(pin_state)) {
 		ret = pinctrl_select_state(penv->pinctrl, pin_state);
 		if (ret < 0) {
-			pr_err("%s: can not set %s pins\n", __func__,
-				active ? WCNSS_PINCTRL_STATE_DEFAULT
+			pr_err("can not set %s pins\n", active ? WCNSS_PINCTRL_STATE_DEFAULT
 				: WCNSS_PINCTRL_STATE_SLEEP);
 			return ret;
 		}
 	} else {
-		pr_err("%s: invalid '%s' pinstate\n", __func__,
-			active ? WCNSS_PINCTRL_STATE_DEFAULT
+		pr_err("invalid '%s' pinstate\n", active ? WCNSS_PINCTRL_STATE_DEFAULT
 			: WCNSS_PINCTRL_STATE_SLEEP);
 		return PTR_ERR(pin_state);
 	}
@@ -3235,7 +3234,7 @@ static int wcnss_notif_cb(struct notifier_block *this, unsigned long code,
 	struct notif_data *data = (struct notif_data *)ss_handle;
 	int ret, xo_mode;
 
-	pr_info("%s: wcnss notification event: %lu\n", __func__, code);
+	pr_notice("wcnss notification event: %lu\n", code);
 
 	if (code == SUBSYS_PROXY_VOTE) {
 		if (pdev && pwlanconfig) {

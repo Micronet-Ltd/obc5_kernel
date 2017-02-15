@@ -11,6 +11,8 @@
  *
  */
 
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
+
 #include <linux/debugfs.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -53,7 +55,7 @@
 
 #define MAX_BUF_SIZE  1024
 
-static int msm_pm_debug_mask = 1;
+static int msm_pm_debug_mask = 5;
 module_param_named(
 	debug_mask, msm_pm_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
 );
@@ -365,6 +367,9 @@ static bool msm_pm_power_collapse(bool from_idle)
 	if (MSM_PM_DEBUG_POWER_COLLAPSE & msm_pm_debug_mask)
 		pr_info("CPU%u: %s: pre power down\n", cpu, __func__);
 
+    if (!from_idle && cpu_online(cpu)) {
+        pr_notice("CPU%u: suspend\n", cpu);
+    }
 	/* This spews a lot of messages when a core is hotplugged. This
 	 * information is most useful from last core going down during
 	 * power collapse
@@ -387,6 +392,10 @@ static bool msm_pm_power_collapse(bool from_idle)
 
 	avs_set_avsdscr(avsdscr);
 	avs_set_avscsr(avscsr);
+
+    if (!from_idle && cpu_online(cpu)) {
+        pr_notice("CPU%u: post power up\n", cpu);
+    }
 
 	if (MSM_PM_DEBUG_POWER_COLLAPSE & msm_pm_debug_mask)
 		pr_info("CPU%u: %s: post power up\n", cpu, __func__);

@@ -644,6 +644,7 @@ static void msm_tlmm_gp_set(struct gpio_chip *gc, unsigned offset, int val)
 	struct msm_pintype_info *pinfo = gc_to_pintype(gc);
 	void __iomem *inout_reg = TLMM_GP_INOUT(pinfo, offset);
 
+//    pr_notice("%s: %u[%d]\n", __func__, offset, val);
 	writel_relaxed(val ? BIT(GPIO_OUT_BIT) : 0, inout_reg);
 }
 
@@ -664,6 +665,7 @@ static int msm_tlmm_gp_dir_out(struct gpio_chip *gc, unsigned offset, int val)
 	struct msm_pintype_info *pinfo = gc_to_pintype(gc);
 	void __iomem *cfg_reg = TLMM_GP_CFG(pinfo, offset);
 
+//    pr_notice("%s: %u[%d]\n", __func__, offset, val);
 	msm_tlmm_gp_set(gc, offset, val);
 	val = readl_relaxed(cfg_reg);
 	val |= BIT(GPIO_OE_BIT);
@@ -675,6 +677,7 @@ static int msm_tlmm_gp_to_irq(struct gpio_chip *gc, unsigned offset)
 {
 	struct msm_pintype_info *pinfo = gc_to_pintype(gc);
 	struct msm_tlmm_irq_chip *ic = pintype_get_ic(pinfo);
+//    pr_notice("%s: %u\n", __func__, offset);
 	return irq_create_mapping(ic->domain, offset);
 }
 
