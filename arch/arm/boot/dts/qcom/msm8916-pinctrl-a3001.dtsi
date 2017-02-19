@@ -207,6 +207,18 @@
 			};
 		};
 */
+
+		dock {
+			qcom,pins = <&gp 15>, <&gp 49>, <&gp 69>;
+			qcom,num-grp-pins = <3>;
+			qcom,pin-func = <0>;
+		        label = "switch_dock";
+			switch_doc: default {
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+
 		watchdog_pin_active {
 			qcom,pins = <&gp 2>, <&gp 9>;
 			qcom,num-grp-pins = <2>;

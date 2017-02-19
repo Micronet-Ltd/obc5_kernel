@@ -277,9 +277,7 @@
 		pinctrl-0 = <&obc_watchdog_pin>;		
 		pinctrl-1 = <&watchdog_pin_sleep>;
 		ehang,toggle-pin = <&msm_gpio 2 0>;
-		ehang,port-det-pin = <&msm_gpio 69 0>;
 		ehang,rf-kill-pin = <&msm_gpio 9 0>;
-		ehang,usb-switch-pin = <&msm_gpio 15 0>;
 		ehang,high-delay=<1000>;
 		ehang,low-delay=<1000>;
 	};
@@ -372,6 +370,18 @@
 		status = "okay";
 	};
 */
+	dock {
+		compatible = "treq5,dock-switch";
+		pinctrl-names = "default";
+		pinctrl-0 = <&switch_doc>;
+		treq5,dock-pin = <&msm_gpio 49 0x00>;
+		treq5,ign-pin = <&msm_gpio 69 0x00>;
+		treq5,usb-switch-pin = <&msm_gpio 15 0>;
+		interrupt-names = "docking", "ignition";
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <&msm_gpio 49 1>, <&msm_gpio 69 1>;
+		status = "okay";
+	};
 };
 
 /* add by shengweiguang for usb gadget 20150817 begin */
