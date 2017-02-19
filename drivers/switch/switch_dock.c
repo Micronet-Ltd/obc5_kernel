@@ -41,22 +41,22 @@ static void dock_switch_work_func(struct work_struct *work)
     int val;
 	
     val = 0;
-    pr_notice("pins[%d, %d]\n", ds->dock_pin, ds->ign_pin);
-    pr_notice("irqs[%d, %d]\n", ds->dock_irq, ds->ign_irq);
-    pr_notice("sched reason[%u]\n", ds->sched_irq);
+    //pr_notice("pins[%d, %d]\n", ds->dock_pin, ds->ign_pin);
+    //pr_notice("irqs[%d, %d]\n", ds->dock_irq, ds->ign_irq);
+    //pr_notice("sched reason[%u]\n", ds->sched_irq);
     if (gpio_is_valid(ds->dock_pin)) {
 		if (ds->dock_active_l == gpio_get_value(ds->dock_pin) ) {
-            pr_notice("dock connected\n");
+            //pr_notice("dock connected\n");
             val |= SWITCH_DOCK;
         } else {
-            pr_notice("dock disconnected\n");
+            //pr_notice("dock disconnected\n");
         }
 
         if (ds->sched_irq & SWITCH_DOCK) {
-            pr_notice("enable dock monitor\n");
+            //pr_notice("enable dock monitor\n");
             ds->sched_irq &= ~SWITCH_DOCK;
             if (gpio_is_valid(ds->usb_switch_pin)) {
-                pr_notice("switch usb\n");
+                //pr_notice("switch usb\n");
                 gpio_set_value(ds->usb_switch_pin, !!(ds->dock_active_l == gpio_get_value(ds->dock_pin)));
             }
             enable_irq(ds->dock_irq);
@@ -65,14 +65,14 @@ static void dock_switch_work_func(struct work_struct *work)
 
     if (gpio_is_valid(ds->ign_pin)) {
         if (ds->ign_active_l == gpio_get_value(ds->ign_pin) ) {
-            pr_notice("ignition connected\n");
+            //pr_notice("ignition connected\n");
             val |= SWITCH_IGN;
         } else {
-            pr_notice("ignition disconnected\n");
+            //pr_notice("ignition disconnected\n");
         }
 
         if (ds->sched_irq & SWITCH_IGN) {
-            pr_notice("enable ignition monitor\n");
+            //pr_notice("enable ignition monitor\n");
             ds->sched_irq &= ~SWITCH_IGN;
             enable_irq(ds->ign_irq); 
         }
@@ -88,7 +88,7 @@ static irqreturn_t dock_switch_irq_handler(int irq, void *arg)
 {
 	struct dock_switch_device *ds = (struct dock_switch_device *)arg;
 
-    pr_notice("pins[%d]\n", irq);
+    //pr_notice("pins[%d]\n", irq);
     disable_irq_nosync(irq);
 
     if (irq == ds->dock_irq) {
@@ -170,10 +170,10 @@ static int dock_switch_probe(struct platform_device *pdev)
                     pr_err("failure to request gpio[%d] irq\n", ds->dock_pin);
                 } else {
                     err = devm_request_irq(dev, ds->dock_irq, dock_switch_irq_handler,
-                                           IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+                                           IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_DISABLED,
                                            pdev->name, ds);
                     if (!err) {
-                        disable_irq_nosync(ds->dock_irq);
+                        //disable_irq_nosync(ds->dock_irq);
                     } else {
                         pr_err("failure to request irq[%d] irq -- polling available\n", ds->dock_irq);
                     }
@@ -211,10 +211,10 @@ static int dock_switch_probe(struct platform_device *pdev)
                     pr_err("failure to request gpio[%d] irq\n", ds->ign_pin);
                 } else {
                     err = devm_request_irq(dev, ds->ign_irq, dock_switch_irq_handler,
-                                           IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+                                           IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_DISABLED,
                                            pdev->name, ds);
                     if (!err) {
-                        disable_irq_nosync(ds->ign_irq);
+                        //disable_irq_nosync(ds->ign_irq);
                     } else {
                         pr_err("failure to request irq[%d] irq -- polling available\n", ds->ign_irq);
                     }
