@@ -290,7 +290,7 @@ static int watchdog_pin_probe(struct platform_device *op)
 	
 	inf->usb_switch_pin=
 		of_get_named_gpio(np,"ehang,usb-switch-pin",0);
-	if(gpio_is_valid(inf->usb_switch_pin) && gpio_is_valid(inf->port_det_pin)){
+	if (gpio_is_valid(inf->usb_switch_pin) && gpio_is_valid(inf->port_det_pin)) {
 		rc=devm_gpio_request(dev,inf->usb_switch_pin,"usb_switch");	
 		if(rc<0)
 			dev_err(dev, "usb switch pin is busy!\n");
