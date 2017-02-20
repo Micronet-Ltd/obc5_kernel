@@ -513,7 +513,7 @@ int irq_set_irq_wake(unsigned int irq, unsigned int on)
 	/* wakeup-capable irqs can be shared between drivers that
 	 * don't need to have the same sleep mode behaviors.
 	 */
-    pr_notice("%s IRQ %d(%d)\n", desc->action && desc->action->name ? desc->action->name : "unknown", irq, on);
+//    pr_notice("%s IRQ %d(%d)\n", desc->action && desc->action->name ? desc->action->name : "unknown", irq, on);
 	if (on) {
 		if (desc->wake_depth++ == 0) {
 			ret = set_irq_wake_real(irq, on);
