@@ -223,7 +223,7 @@ static int pn544_dev_release(struct inode *inode, struct file *filp)
     struct pn544_dev *pn544_dev = container_of(filp->private_data, struct pn544_dev, pn544_device);
 
 //	clear_bit(1, &pn544_dev->open);
-    pr_notice("\n");
+//    pr_notice("\n");
 
     if (gpio_is_valid(pn544_dev->firm_gpio)) {
         gpio_set_value(pn544_dev->firm_gpio, 0); 
@@ -252,7 +252,7 @@ static long pn544_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 			/* 
 			power on with firmware download (requires hw reset)
 			 */
-			pr_notice("power on with firmware pn544_dev->ven_gpio = %d \n", pn544_dev->ven_gpio);
+//			pr_notice("power on with firmware pn544_dev->ven_gpio = %d \n", pn544_dev->ven_gpio);
 			gpio_set_value(pn544_dev->ven_gpio, 1);
 			gpio_set_value(pn544_dev->firm_gpio, 1);
 			msleep(10);
@@ -265,7 +265,7 @@ static long pn544_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 		else if (arg == 1) 
 		{
 			/* power on */
-			pr_notice("power on pn544_dev->ven_gpio = %d \n", pn544_dev->ven_gpio);
+//			pr_notice("power on pn544_dev->ven_gpio = %d \n", pn544_dev->ven_gpio);
 			gpio_set_value(pn544_dev->firm_gpio, 0);
 			gpio_set_value(pn544_dev->ven_gpio, 1);
 			msleep(50);
@@ -274,7 +274,7 @@ static long pn544_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 		else  if (arg == 0) 
 		{
 			/* power off */
-			pr_notice("power off pn544_dev->ven_gpio =%d \n", pn544_dev->ven_gpio);
+//			pr_notice("power off pn544_dev->ven_gpio =%d \n", pn544_dev->ven_gpio);
 			gpio_set_value(pn544_dev->firm_gpio, 0);
 			gpio_set_value(pn544_dev->ven_gpio, 0);
 			msleep(50);

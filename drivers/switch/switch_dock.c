@@ -157,26 +157,23 @@ static int dock_switch_probe(struct platform_device *pdev)
                 pr_err("failure to request the gpio[%d]\n", ds->dock_pin);
                 break;
             }
-            //err = gpio_direction_output(ds->dock_pin, 1);
             err = gpio_direction_input(ds->dock_pin);
             if (err < 0) {
                 pr_err("failure to set direction of the gpio[%d]\n", ds->dock_pin);
                 break;
             }
-            gpio_export(ds->dock_pin, 1);
-            if (1) {
-                ds->dock_irq = gpio_to_irq(ds->dock_pin); 
-                if (ds->dock_irq < 0) {
-                    pr_err("failure to request gpio[%d] irq\n", ds->dock_pin);
+            gpio_export(ds->dock_pin, 0);
+            ds->dock_irq = gpio_to_irq(ds->dock_pin); 
+            if (ds->dock_irq < 0) {
+                pr_err("failure to request gpio[%d] irq\n", ds->dock_pin);
+            } else {
+                err = devm_request_irq(dev, ds->dock_irq, dock_switch_irq_handler,
+                                       IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_DISABLED,
+                                       pdev->name, ds);
+                if (!err) {
+                    disable_irq_nosync(ds->dock_irq);
                 } else {
-                    err = devm_request_irq(dev, ds->dock_irq, dock_switch_irq_handler,
-                                           IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_DISABLED,
-                                           pdev->name, ds);
-                    if (!err) {
-                        //disable_irq_nosync(ds->dock_irq);
-                    } else {
-                        pr_err("failure to request irq[%d] irq -- polling available\n", ds->dock_irq);
-                    }
+                    pr_err("failure to request irq[%d] irq -- polling available\n", ds->dock_irq);
                 }
             }
 
@@ -199,27 +196,27 @@ static int dock_switch_probe(struct platform_device *pdev)
                 break;
             }
             err = gpio_direction_input(ds->ign_pin);
-//            err = gpio_direction_output(ds->ign_pin, 1);
             if (err < 0) {
                 pr_err("failure to set direction of the gpio[%d]\n", ds->ign_pin);
                 break;
             }
-            gpio_export(ds->ign_pin, 1);
-            if (1) {
-                ds->ign_irq = gpio_to_irq(ds->ign_pin); 
-                if (ds->ign_irq < 0) {
-                    pr_err("failure to request gpio[%d] irq\n", ds->ign_pin);
+            gpio_export(ds->ign_pin, 0);
+            ds->ign_irq = gpio_to_irq(ds->ign_pin); 
+            if (ds->ign_irq < 0) {
+                pr_err("failure to request gpio[%d] irq\n", ds->ign_pin);
+            } else {
+                err = devm_request_irq(dev, ds->ign_irq, dock_switch_irq_handler,
+                                       IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_DISABLED,
+                                       pdev->name, ds);
+                if (!err) {
+                    disable_irq_nosync(ds->ign_irq);
                 } else {
-                    err = devm_request_irq(dev, ds->ign_irq, dock_switch_irq_handler,
-                                           IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_DISABLED,
-                                           pdev->name, ds);
-                    if (!err) {
-                        //disable_irq_nosync(ds->ign_irq);
-                    } else {
-                        pr_err("failure to request irq[%d] irq -- polling available\n", ds->ign_irq);
-                    }
+                    pr_err("failure to request irq[%d] irq -- polling available\n", ds->ign_irq);
                 }
             }
+        }
+        if (!(ds->dock_irq < 0 && ds->ign_irq < 0)) {
+            device_init_wakeup(dev, 1);
         }
 
         ds->sdev.name = "dock";
@@ -263,7 +260,8 @@ static int dock_switch_remove(struct platform_device *pdev)
 
     switch_dev_unregister(&ds->sdev);
 
-    device_wakeup_disable(&pdev->dev);
+    if (device_may_wakeup(&pdev->dev))
+        device_wakeup_disable(&pdev->dev);
 	if (ds->ign_irq) {
         disable_irq_nosync(ds->ign_irq);
 		devm_free_irq(&pdev->dev, ds->ign_irq, ds);
@@ -293,9 +291,11 @@ static int dock_switch_suspend(struct device *dev)
 
     if (device_may_wakeup(dev)) {
         if (ds->ign_irq) {
+            pr_notice("enable wake source IGN[%d]\n", ds->ign_irq);
             enable_irq_wake(ds->ign_irq);
         }
         if (ds->dock_irq) {
+            pr_notice("enable wake source DOCK[%d]\n", ds->dock_irq);
             enable_irq_wake(ds->dock_irq);
         }
     }
@@ -310,16 +310,19 @@ static int dock_switch_resume(struct device *dev)
 
     if (device_may_wakeup(dev)) {
         if (ds->ign_irq) {
+            pr_notice("disable wake source IGN[%d]\n", ds->ign_irq);
             disable_irq_nosync(ds->ign_irq);
             disable_irq_wake(ds->ign_irq);
         }
         if (ds->dock_irq) {
+            pr_notice("disable wake source DOCK[%d]\n", ds->dock_irq);
             disable_irq_nosync(ds->dock_irq);
             disable_irq_wake(ds->dock_irq);
         }
     }
 
     ds->sched_irq = SWITCH_DOCK | SWITCH_IGN;
+    pr_notice("sched reason[%u]\n", ds->sched_irq);
 	schedule_work(&ds->work);
 
 	return 0;
