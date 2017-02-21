@@ -17,6 +17,7 @@
 #include <linux/of_gpio.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
+#include <linux/wakelock.h>
 
 #define SWITCH_DOCK	(1 << 0)
 #define SWITCH_IGN  (1 << 1)
