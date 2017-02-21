@@ -33,6 +33,7 @@ struct dock_switch_device {
 	int	    ign_active_l;
     unsigned sched_irq;
 	int	    state;
+    struct wake_lock wlock;
 };
 
 static void dock_switch_work_func(struct work_struct *work) 
@@ -67,7 +68,9 @@ static void dock_switch_work_func(struct work_struct *work)
         if (ds->ign_active_l == gpio_get_value(ds->ign_pin) ) {
             //pr_notice("ignition connected\n");
             val |= SWITCH_IGN;
+            wake_lock(&ds->wlock);
         } else {
+            wake_unlock(&ds->wlock);
             //pr_notice("ignition disconnected\n");
         }
 
@@ -137,6 +140,7 @@ static int dock_switch_probe(struct platform_device *pdev)
         }
 
         INIT_WORK(&ds->work, dock_switch_work_func);
+        wake_lock_init(&ds->wlock, WAKE_LOCK_SUSPEND, "switch_dock_wait_lock");
 
         ds->dock_pin = err;
         ds->dock_active_l = !ds->dock_active_l;
@@ -276,6 +280,7 @@ static int dock_switch_remove(struct platform_device *pdev)
 	if (gpio_is_valid(ds->ign_pin))
 		devm_gpio_free(&pdev->dev, ds->ign_pin);
 
+    wake_lock_destroy(&ds->wlock);
     dev_set_drvdata(&pdev->dev, 0);
 
 	devm_kfree(&pdev->dev, ds);
