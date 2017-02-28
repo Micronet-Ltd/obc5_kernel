@@ -974,25 +974,18 @@ static int ft5x46_tp_gesture_enable(struct i2c_client *client)
 	
 	tp_gesture_enable = true;
 	enable_irq_wake(client->irq);
-
+	
   return 0;
 }
-
-void tp_gesture_enable_func(void)
-{
-	pr_debug("%s..\n",__func__);
-	if(tp_gesture_support == true){
-	    ft5x46_tp_gesture_enable(ft5x46_i2c_client);
-	    mdelay(200);
-	}
-}
-EXPORT_SYMBOL(tp_gesture_enable_func);
 
 static int ft5x46_tp_gesture_disable(struct i2c_client *client)
 {
     
 	u8 auc_i2c_write_buf[10];
-	
+
+	if(tp_gesture_enable == false){
+	     return 0;
+	}	
 	auc_i2c_write_buf[0] = 0xd0;
 	auc_i2c_write_buf[1] = 0x00;
 	fts_i2c_Write(client, auc_i2c_write_buf, 2);	//let fw close gestrue function 
@@ -1002,14 +995,7 @@ static int ft5x46_tp_gesture_disable(struct i2c_client *client)
 	
 	return 0;
 }
-void tp_gesture_disable_func(void)
-{
-    pr_debug("%s..\n",__func__);
-    if(tp_gesture_enable == true){
-        ft5x46_tp_gesture_disable(ft5x46_i2c_client);
-    }        
-}
-EXPORT_SYMBOL(tp_gesture_disable_func);
+
 /*added by jiao.shp for tp gesture in 20141113 END*/
 
 #ifdef CONFIG_OF
@@ -1357,6 +1343,7 @@ static int ft5x36_ts_suspend(struct device *dev)
 	struct fts_ts_data *ft5x36_ts = dev_get_drvdata(dev);
 	char txbuf[2];
 	int err;
+	int i;
 
 
 	if (ft5x36_ts->loading_fw) {
@@ -1368,6 +1355,7 @@ static int ft5x36_ts_suspend(struct device *dev)
 		dev_info(dev, "Already in suspend state\n");
 		return 0;
 	}
+	pr_info("###%s\n",__func__);
 //del by chenchen 20140825 begin
 /*modified for pin used touch start.zengguang 2014.08.22*/	
 //	if (ft5x36_ts->ts_pinctrl) {
@@ -1390,32 +1378,42 @@ static int ft5x36_ts_suspend(struct device *dev)
     /*Modified by jiao.shp for tp gesture in 20141113 START*/
     if (tp_gesture_support == true){
         ft5x46_tp_gesture_enable(ft5x36_ts->client);
-    }else{
-        disable_irq(ft5x36_ts->client->irq);
-        if (gpio_is_valid(ft5x36_ts->pdata->reset_gpio)) {
-    		txbuf[0] = FTS_REG_PMODE;
-    		txbuf[1] = FTS_PMODE_HIBERNATE;
-    		fts_i2c_Write(ft5x36_ts->client, txbuf, sizeof(txbuf));
-	    }
+        ft5x36_ts->suspended = true;
+        return 0;
     }
+    
+    disable_irq(ft5x36_ts->client->irq);
+    
+    	/* release all touches */
+		for (i = 0; i < 5; i++) {
+			input_mt_slot(ft5x36_ts->input_dev, i);
+			input_mt_report_slot_state(ft5x36_ts->input_dev, MT_TOOL_FINGER, 0);
+		}
+		input_mt_report_pointer_emulation(ft5x36_ts->input_dev, false);
+		input_sync(ft5x36_ts->input_dev);
+		
+    if (gpio_is_valid(ft5x36_ts->pdata->reset_gpio)) {
+		txbuf[0] = FTS_REG_PMODE;
+		txbuf[1] = FTS_PMODE_HIBERNATE;
+		fts_i2c_Write(ft5x36_ts->client, txbuf, sizeof(txbuf));
+  }
+
     /*Modified by jiao.shp for tp gesture in 20141113 END*/
 
     /*Modified by jiao.shp for tp gesture in 20141113 START*/
-    if(true != tp_gesture_enable){
-    	if (ft5x36_ts->pdata->power_on) {
-    		err = ft5x36_ts->pdata->power_on(false);
-    		if (err) {
-    			dev_err(dev, "power off failed");
-    			goto pwr_off_fail;
-    		}
-    	} else {
-    		err = ft5x36_power_on(ft5x36_ts, false);
-    		if (err) {
-    			dev_err(dev, "power off failed");
-    			goto pwr_off_fail;
-    		}
-    	}
-    }   
+  	if (ft5x36_ts->pdata->power_on) {
+  		err = ft5x36_ts->pdata->power_on(false);
+  		if (err) {
+  			dev_err(dev, "power off failed");
+  			goto pwr_off_fail;
+  		}
+  	} else {
+  		err = ft5x36_power_on(ft5x36_ts, false);
+  		if (err) {
+  			dev_err(dev, "power off failed");
+  			goto pwr_off_fail;
+  		}
+  	}
     /*Modified by jiao.shp for tp gesture in 20141113 END*/
 
 	ft5x36_ts->suspended = true;
@@ -1440,7 +1438,6 @@ static int ft5x36_ts_resume(struct device *dev)
 {
 	struct fts_ts_data *ft5x36_ts = dev_get_drvdata(dev);
 	int err;
-	int i;
 //added by chenchen for proximity function 20140828 begin	
 #ifdef CONFIG_TOUCHPANEL_PROXIMITY_SENSOR
 	is_need_report_pointer = 1;
@@ -1451,58 +1448,46 @@ static int ft5x36_ts_resume(struct device *dev)
 #endif
 //added by chenchen for proximity function 20140828 end	
 
-	//wangkai_delete report in suspend_start
-//yuquan open this for touchkey crash
-	if(false==tp_gesture_enable)
-	{	
-		for (i = 0; i < 5; i++) {
-			input_mt_slot(ft5x36_ts->input_dev, i);
-			input_mt_report_slot_state(ft5x36_ts->input_dev, MT_TOOL_FINGER, 0);
-		}
-		input_report_key(ft5x36_ts->input_dev, BTN_TOUCH, 0);
-		input_sync(ft5x36_ts->input_dev);
-	}
-//wangkai_delete report in suspend_end
-
 	if (!ft5x36_ts->suspended) {
 		dev_info(dev, "Already in awake state\n");
 		return 0;
 	}
 
-  if(true != tp_gesture_enable){
-      if (ft5x36_ts->pdata->power_on) {
-  		err = ft5x36_ts->pdata->power_on(true);
-  		if (err) {
-  			dev_err(dev, "power on failed");
-  			return err;
-  		}
-  	} else {
-  		err = ft5x36_power_on(ft5x36_ts, true);
-  		if (err) {
-  			dev_err(dev, "power on failed");
-  			return err;
-  		}
-  	}
-  }
-    
   if(true == tp_gesture_enable){
       ft5x46_tp_gesture_disable(ft5x36_ts->client);
-  }else{
-		if (gpio_is_valid(ft5x36_ts->pdata->reset_gpio)) {
-			gpio_set_value_cansleep(ft5x36_ts->pdata->reset_gpio, 0);
-			mdelay(FT_RESET_DLY);
-			gpio_set_value_cansleep(ft5x36_ts->pdata->reset_gpio, 1);
+      ft5x36_ts->suspended = false;
+      return 0;
+  }
+    
+
+ if (ft5x36_ts->pdata->power_on) {
+		err = ft5x36_ts->pdata->power_on(true);
+		if (err) {
+			dev_err(dev, "power on failed");
+			return err;
 		}
-		mdelay(FT_STARTUP_DLY);
+	} else {
+		err = ft5x36_power_on(ft5x36_ts, true);
+		if (err) {
+			dev_err(dev, "power on failed");
+			return err;
+		}
+	}
+    
+	if (gpio_is_valid(ft5x36_ts->pdata->reset_gpio)) {
+		gpio_set_value_cansleep(ft5x36_ts->pdata->reset_gpio, 0);
+		mdelay(FT_RESET_DLY);
+		gpio_set_value_cansleep(ft5x36_ts->pdata->reset_gpio, 1);
+	}
+	mdelay(FT_STARTUP_DLY);
 
-    enable_irq(ft5x36_ts->client->irq);
+  enable_irq(ft5x36_ts->client->irq);
 
-   if(tp_glove_mode_enable == true){
-        u8 auc_i2c_write_buf[2];
-        auc_i2c_write_buf[0] = 0xc0;
-        auc_i2c_write_buf[1] = 0x01;
-        fts_i2c_Write(ft5x36_ts->client, auc_i2c_write_buf, 2);
-    }
+ if(tp_glove_mode_enable == true){
+      u8 auc_i2c_write_buf[2];
+      auc_i2c_write_buf[0] = 0xc0;
+      auc_i2c_write_buf[1] = 0x01;
+      fts_i2c_Write(ft5x36_ts->client, auc_i2c_write_buf, 2);
   }
 
 	ft5x36_ts->suspended = false;
@@ -1644,11 +1629,14 @@ static int fts_ts_probe(struct i2c_client *client,
 		err = ft5x36_parse_dt(&client->dev, pdata);
 		if (err)
 			return err;
-        /*added by jiao.shp for tp gesture in 20141113 START*/
-        err = ft5x46_tp_gesture_init(&client->dev, pdata);
-        if (err)
-            return err;
-        /*added by jiao.shp for tp gesture in 20141113 END*/
+    /*added by jiao.shp for tp gesture in 20141113 START*/
+    err = ft5x46_tp_gesture_init(&client->dev, pdata);
+    if (err)
+        return err;
+    /*added by jiao.shp for tp gesture in 20141113 END*/
+    err = ft5x46_tp_glove_mode_init(&client->dev, pdata);
+    if (err)
+        return err;
 	} else
 		pdata = client->dev.platform_data;
 
@@ -1673,6 +1661,7 @@ static int fts_ts_probe(struct i2c_client *client,
 	fts_ts->pdata = pdata;
 	fts_ts->x_max = pdata->x_max - 1;
 	fts_ts->y_max = pdata->y_max - 1;
+	fts_ts->suspended = false;
 	#if 0
 	err = request_threaded_irq(client->irq, NULL, fts_ts_interrupt,
 				   pdata->irqflags, client->dev.driver->name,
@@ -1879,7 +1868,8 @@ static int fts_ts_probe(struct i2c_client *client,
 	if (err < 0) {
 		dev_err(&client->dev, "FW version read failed");
 		goto free_reset_gpio;
-	}	
+	}
+	printk(KERN_INFO "FT5x36:firmware version in tp mudule = 0x%x\n",fw_ver_val);	
 #ifdef CONFIG_GET_HARDWARE_INFO
 	ft5x36_hardware_info_reg(pdata->family_id,ven_id_val,fw_ver_val);
 #endif	
@@ -1890,11 +1880,9 @@ static int fts_ts_probe(struct i2c_client *client,
 		dev_err(&client->dev, "%s:[FTS] create fts control iic driver failed\n",
 				__func__);
 #endif
-    err = ft5x46_tp_glove_mode_init(&client->dev, pdata);
-    if (err)
-        return err;
     
 	enable_irq(client->irq);
+	printk(KERN_INFO "%s,FT5x36 enable_irq over",__func__);
 	return 0;
 	
 free_reset_gpio:

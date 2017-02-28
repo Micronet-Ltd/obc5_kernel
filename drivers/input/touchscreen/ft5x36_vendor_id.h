@@ -37,5 +37,6 @@
 
 #define FT6X06_VENDOR0xD1_RONGNA	         0xd1		//add for ft6x06 rongnaguangdian ctp vendor id 0xd1 by zengguang for 2014.07.30
 
+#define FT5446_VENDOR0x9A_MOXI		0x9A
 
 #endif//__FOCALTECH_VENDOR_ID_H__
