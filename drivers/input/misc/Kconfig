@@ -889,3 +889,20 @@ config SENSORS_BMP280_I2C
 	help
 	 If you say yes here, you get support Bosch Sensortec's BMP280 pressure sensor hooked to an I2C bus.
 #add by shengweiguang end
+#add by zj 20160711  for sensor ltr559 light and promixy sensor
+config SENSORS_LTR559
+       tristate "LTR559 als&prox sensor"
+       depends on (I2C ) && SYSFS
+       help
+         If you say yes here you get support for rpr04x0.
+         To compile this driver as a module, choose M here: the
+         module will be called rpr0410-core.
+config SENSORS_BMC156
+       tristate "BMC156 accl&mag sensor"
+       depends on (I2C ) && SYSFS
+       help
+         If you say yes here you get support for rpr04x0.
+         To compile this driver as a module, choose M here: the
+         module will be called rpr0410-core.
+#
+#end by zj 20160711  end
