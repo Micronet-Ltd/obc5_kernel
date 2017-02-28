@@ -613,9 +613,11 @@ int msm_camera_power_down_control(struct msm_camera_power_ctrl_t *ctrl,
 
 			/*Modified Begin: by hanjianfeng for camera power control 20140809*/
 			if (ps)
-			{					
+			{		
+			  /* delete by shengweiguang begin */			
 				if(ps->config_val != POWERDOWN_DEFAULT)
 					break;
+			  /* delete by shengweiguang end */
 				if (pd->seq_val < ctrl->num_vreg) // add by shengweiguang for fix boot crash
 				{
 				   msm_camera_config_single_vreg(ctrl->dev,
