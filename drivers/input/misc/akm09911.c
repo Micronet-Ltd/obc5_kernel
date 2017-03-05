@@ -886,7 +886,7 @@ static int akm_enable_set(struct sensors_classdev *sensors_cdev,
 			else
 				queue_delayed_work(akm->work_queue, &akm->dwork,
 					(unsigned long)nsecs_to_jiffies64(
-						akm->delay[MAG_DATA_FLAG]));
+					(akm->delay[MAG_DATA_FLAG]<40000000LL) ? 40000000LL: akm->delay[MAG_DATA_FLAG]));//	akm->delay[MAG_DATA_FLAG]));
 		}
 	} else {
 		if (akm->auto_report) {
@@ -1544,7 +1544,7 @@ static int akm_compass_resume(struct device *dev)
 			else
 				queue_delayed_work(akm->work_queue, &akm->dwork,
 					(unsigned long)nsecs_to_jiffies64(
-						akm->delay[MAG_DATA_FLAG]));
+					(akm->delay[MAG_DATA_FLAG]<40000000LL) ? 40000000LL: akm->delay[MAG_DATA_FLAG]));//	akm->delay[MAG_DATA_FLAG]));
 		}
 	}
 
@@ -1899,7 +1899,7 @@ static void akm_dev_poll(struct work_struct *work)
 	if (!akm->use_hrtimer)
 		queue_delayed_work(akm->work_queue, &akm->dwork,
 			(unsigned long)nsecs_to_jiffies64(
-				akm->delay[MAG_DATA_FLAG]));
+			(akm->delay[MAG_DATA_FLAG]<40000000LL) ? 40000000LL: akm->delay[MAG_DATA_FLAG]));//	akm->delay[MAG_DATA_FLAG]));
 }
 
 static enum hrtimer_restart akm_timer_func(struct hrtimer *timer)
