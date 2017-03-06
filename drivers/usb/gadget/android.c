@@ -92,6 +92,7 @@ static const char longname[] = "Gadget Android";
 #define PRODUCT_ID		0x0001
 
 #define ANDROID_DEVICE_NODE_NAME_LENGTH 11
+#define ANDROID_USE_WAIT_LOCK 1
 
 struct android_usb_function {
 	char *name;
@@ -209,6 +210,7 @@ struct android_dev {
 
 	/* A list node inside the android_dev_list */
 	struct list_head list_item;
+    struct wake_lock wlock;
 };
 
 struct android_configuration {
@@ -3648,6 +3650,10 @@ android_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *c)
 	if (!dev->connected) {
 		dev->connected = 1;
 		do_work = true;
+
+#if (ANDROID_USE_WAIT_LOCK)
+        wake_lock(&dev->wlock);
+#endif
 	} else if (c->bRequest == USB_REQ_SET_CONFIGURATION &&
 						cdev->config) {
 		if (!prev_configured)
@@ -3670,6 +3676,11 @@ static void android_disconnect(struct usb_composite_dev *cdev)
 	acc_disconnect();
 
 	dev->connected = 0;
+
+#if (ANDROID_USE_WAIT_LOCK)
+        wake_unlock(&dev->wlock);
+#endif
+
 	schedule_work(&dev->work);
 }
 
@@ -3985,6 +3996,10 @@ static int android_probe(struct platform_device *pdev)
 		android_dev->idle_pc_rpm_no_int_secs = IDLE_PC_RPM_NO_INT_SECS;
 	}
 	strlcpy(android_dev->pm_qos, "high", sizeof(android_dev->pm_qos));
+
+#if (ANDROID_USE_WAIT_LOCK)
+    wake_lock_init(&android_dev->wlock, WAKE_LOCK_SUSPEND, "android_gaget_wait_lock");
+#endif
 
 	return ret;
 err_probe:
