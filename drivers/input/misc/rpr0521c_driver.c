@@ -123,7 +123,7 @@ static const struct GAIN_TABLE {
 struct ALS_PS_DATA *sensor_info;
 /* static int sus_res = 0; */
 static struct sensors_classdev sensors_light_cdev = {
-	.name = "light",
+	.name = "rpr0521c-light",
 	.vendor = "rohm",
 	.version = 1,
 	.handle = SENSORS_LIGHT_HANDLE,
@@ -144,7 +144,7 @@ static struct sensors_classdev sensors_light_cdev = {
 };
 
 static struct sensors_classdev sensors_proximity_cdev = {
-	.name = "proximity",
+	.name = "rpr0521c-proximity",
 	.vendor = "rohm",
 	.version = 1,
 	.handle = SENSORS_PROXIMITY_HANDLE,
@@ -1073,6 +1073,19 @@ static int rpr521_als_poll_delay(struct sensors_classdev *sensors_cdev,
 	rpr521_set_als_poll_delay(als_ps->client, delay_msec);
 	return 0;
 }
+
+/* add by shengweiguang begin */
+static int rpr521_ps_pseudo_poll_delay(struct sensors_classdev *sensors_cdev,
+		unsigned int delay_msec)
+{
+	/*
+	struct ALS_PS_DATA *als_ps = container_of(sensors_cdev,
+			struct ALS_PS_DATA, als_cdev);
+	rpr521_set_als_poll_delay(als_ps->client, delay_msec);
+	*/
+	return 0;
+}
+/* add by shengweiguang end */
 
 static int rpr521_cdev_ps_flush(struct sensors_classdev *sensors_cdev)
 {
@@ -2169,19 +2182,20 @@ static int rpr521_probe(struct i2c_client *client,
 
 	als_ps->ps_cdev = sensors_proximity_cdev;
 	als_ps->ps_cdev.sensors_enable = rpr521_ps_set_enable;
-	als_ps->ps_cdev.sensors_poll_delay = NULL,
+	//als_ps->ps_cdev.sensors_poll_delay = NULL, //modify by shengweiguang 
+	als_ps->ps_cdev.sensors_poll_delay = rpr521_ps_pseudo_poll_delay;
 	als_ps->ps_cdev.sensors_flush = rpr521_cdev_ps_flush;
 	als_ps->ps_cdev.sensors_calibrate = rpr521_ps_calibrate;
 	als_ps->ps_cdev.sensors_write_cal_params = rpr521_ps_write_calibrate;
 	memset(&als_ps->ps_cdev.cal_result, 0 , sizeof(als_ps->ps_cdev.cal_result));
 
-	ret = sensors_classdev_register(&client->dev, &als_ps->als_cdev);
+	ret = sensors_classdev_register(&als_ps->input_dev_als->dev, &als_ps->als_cdev);
 	if (ret) {
 		pr_err("%s: Unable to register to sensors class: %d\n",
 				__func__, ret);
 		goto exit_free_irq;
 	}
-	ret = sensors_classdev_register(&client->dev, &als_ps->ps_cdev);
+	ret = sensors_classdev_register(&als_ps->input_dev_ps->dev, &als_ps->ps_cdev);
 	if (ret) {
 		pr_err("%s: Unable to register to sensors class: %d\n",
 						 __func__, ret);

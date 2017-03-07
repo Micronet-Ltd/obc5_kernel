@@ -341,6 +341,28 @@ int fts_ctpm_fw_upgrade_with_i_file(struct i2c_client *client)
 
     	#endif 
       break;
+	case FT5446_VENDOR0x9A_MOXI:
+        #if defined(CONFIG_PRODUCT_A2001)
+    	fw_len = sizeof(FT5446_FIRMWARE_MOXI);
+    	pr_info("FT5X26:upgrade with junda 5446 firmware,firmware size is %d.\n",fw_len);	
+    	/*judge the fw that will be upgraded
+    	         * if illegal, then stop upgrade and return.
+    	        */
+    	if (fw_len < 8 || fw_len > 54 * 1024) {
+    		dev_err(&client->dev, "%s:FW length error\n", __func__);
+    		return -EIO;
+    	}
+
+  		/*FW upgrade */
+  		pbt_buf = FT5446_FIRMWARE_MOXI;
+  		/*call the upgrade function */
+  		i_ret = fts5x46_ctpm_fw_upgrade(client, pbt_buf, sizeof(FT5446_FIRMWARE_MOXI));
+  		if (i_ret != 0)
+  			dev_err(&client->dev, "%s:upgrade failed. err. i_ret is %d\n",
+  					__func__,i_ret);
+
+    	#endif 
+    	break;
         case FT5X46_VENDOR0xD8_LEAD:
         #if defined(CONFIG_QL1001_J20) || defined(CONFIG_QL1001_J20TMP)
     	fw_len = sizeof(FT5526_FIRMWARE_LEAD);
@@ -488,6 +510,13 @@ u8 fts_ctpm_get_i_file_ver(struct i2c_client *client)
     	ui_sz = sizeof(FT5526_FIRMWARE_JUNDA);
     	if (ui_sz > 2)
             return FT5526_FIRMWARE_JUNDA[ui_sz - 2];
+		#endif	
+        break;
+	case FT5446_VENDOR0x9A_MOXI:        
+        #if defined(CONFIG_PRODUCT_A2001)
+    	ui_sz = sizeof(FT5446_FIRMWARE_MOXI);
+    	if (ui_sz > 2)
+            return FT5446_FIRMWARE_MOXI[ui_sz - 2];
 		#endif	
         break;     
     case FT5X46_VENDOR0xD8_LEAD:

@@ -534,6 +534,7 @@
 #include "dsi-panel-lead-otm1284-cpt-720p-video.dtsi"
 #include "dsi-panel-h8394d-txd-innolux5p5-hd-video.dtsi"
 #include "dsi-panel-h8394f-jd-auo5p5-hd-video.dtsi"
+#include "dsi-panel-st7703-hxgd5p5-hd-video.dtsi"
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
@@ -565,6 +566,9 @@
        qcom,cont-splash-enabled;
 };
 
+&dsi_st7703_hd_hxgd_5p5_hd_vid {
+       qcom,cont-splash-enabled;
+};
 
 &pm8916_vadc {
 	chan@30 {
