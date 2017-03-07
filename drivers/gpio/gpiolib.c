@@ -1732,6 +1732,7 @@ static int gpiod_direction_output(struct gpio_desc *desc, int value)
 		}
 	}
 
+//    pr_notice("%s: %s [%d->%d]\n", __func__, (desc->label)?desc->label:"unknown", offset, value);
 	status = chip->direction_output(chip, offset, value);
 	if (status == 0)
 		set_bit(FLAG_IS_OUT, &desc->flags);
@@ -1930,6 +1931,7 @@ static void gpiod_set_value(struct gpio_desc *desc, int value)
 	chip = desc->chip;
 	/* Should be using gpio_set_value_cansleep() */
 	WARN_ON(chip->can_sleep);
+//    pr_notice("%s: %s [%d->%d]\n", __func__, (desc->label)?desc->label:"unknown", gpio_chip_hwgpio(desc), value);
 	trace_gpio_value(desc_to_gpio(desc), 0, value);
 	if (test_bit(FLAG_OPEN_DRAIN, &desc->flags))
 		_gpio_set_open_drain_value(desc, value);

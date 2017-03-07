@@ -9,6 +9,7 @@
 #include <asm/uaccess.h>
 
 #include <linux/sched.h>
+#include <linux/notifier.h>
 
 
 MODULE_LICENSE("Dual BSD/GPL");
@@ -56,7 +57,32 @@ struct virt_gpio {
 struct virt_gpio * g_pvpgio;
 
 /////
+static RAW_NOTIFIER_HEAD(gpio_in_chain);
+static DEFINE_RAW_SPINLOCK(gpio_in_chain_lock);
 
+static void gpio_in_notify(unsigned long reason, void *arg)
+{
+    unsigned long flags;
+
+    raw_spin_lock_irqsave(&gpio_in_chain_lock, flags);
+    raw_notifier_call_chain(&gpio_in_chain, reason, 0);
+    raw_spin_unlock_irqrestore(&gpio_in_chain_lock, flags);
+}
+
+int32_t gpio_in_register_notifier(struct notifier_block *nb)
+{
+    unsigned long flags;
+    int32_t err;
+
+    raw_spin_lock_irqsave(&gpio_in_chain_lock, flags);
+    err = raw_notifier_chain_register(&gpio_in_chain, nb);
+    raw_spin_unlock_irqrestore(&gpio_in_chain_lock, flags);
+    pr_notice("%d\n", err);
+
+    return err;
+}
+EXPORT_SYMBOL(gpio_in_register_notifier);
+///////
 static int vgpio_dev_open(struct inode *inode, struct file *file)
 {
 	struct virt_gpio * dev;
@@ -163,6 +189,7 @@ static ssize_t virt_gpio_chr_write(struct file * file, const char __user * buf,
 	struct virt_gpio * dev = file->private_data;
 	uint8_t msg[4];
 	int i;
+	uint8_t val = 0;
 
 	if(count != 4)
 		return -EINVAL;
@@ -175,6 +202,8 @@ static ssize_t virt_gpio_chr_write(struct file * file, const char __user * buf,
 		return -EINVAL;
 	}
 
+//	pr_err(" %02d %02d\n", msg[2], msg[3]);
+
 	// TODO: use macro
 	for(i = 0; i < dev->gpiochip_in.ngpio; i++) {
 		if(msg[2] & (1<<i)) {
@@ -185,9 +214,14 @@ static ssize_t virt_gpio_chr_write(struct file * file, const char __user * buf,
 //				printk("%s: clear INPUT%d\n", __func__, i);
 				clear_bit(i, &dev->gpi_values);
 			}
+          	val |= (1<<i);
 		}
 	}
-
+   	if(val)
+	{
+	    pr_err("gpio_in_notify %d\n", val);
+	    gpio_in_notify(val, 0);
+	}
 	return count;
 }
 
