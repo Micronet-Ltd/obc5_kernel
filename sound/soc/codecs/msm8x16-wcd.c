@@ -1303,7 +1303,7 @@ static int msm8x16_wcd_ext_spk_set(struct snd_kcontrol *kcontrol,
 			current_ext_spk_pa_state = false;
 			if(gpio_is_valid(hp_spk_switch_gpio))
 				gpio_direction_output(hp_spk_switch_gpio, 0);
-			pr_info("howard set ext pa gpio 0\n");
+			pr_debug("howard set ext pa gpio 0\n");
 			break;
 		case 1:
 			if(gpio_is_valid(hp_spk_switch_gpio))
@@ -1312,7 +1312,7 @@ static int msm8x16_wcd_ext_spk_set(struct snd_kcontrol *kcontrol,
 			if(gpio_is_valid(ext_spk_pa_gpio))
 				gpio_direction_output(ext_spk_pa_gpio, 1);
 			current_ext_spk_pa_state = true;
-			pr_info("howard set ext pa gpio 1\n");
+			pr_debug("howard set ext pa gpio 1\n");
 			break;
 		default:
 			return -EINVAL;

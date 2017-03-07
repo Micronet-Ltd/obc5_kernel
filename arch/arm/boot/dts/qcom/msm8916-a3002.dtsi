@@ -254,7 +254,7 @@
 		};
 	
 		red {
-			gpios = <&msm_gpio 49 0>;
+			gpios = <&msm_gpio 116 0>;
 			label = "red";
 			default-state = "off";
 			retain-state-suspended;
@@ -265,14 +265,16 @@
 			label = "green";
 			default-state = "off";
 			retain-state-suspended;
-		};	
+		};
 	};
 	watchdogpin {
 		compatible = "ehang,watchdog-pin";
-		pinctrl-names = "default";
+		pinctrl-names = "default", "watchdog_pin_sleep";
 		pinctrl-0 = <&obc_watchdog_pin>;		
+		pinctrl-1 = <&watchdog_pin_sleep>;		
 		ehang,toggle-pin = <&msm_gpio 2 0>;
 		ehang,rf-kill-pin = <&msm_gpio 9 0>;
+		ehang,suspend-ind-pin = <&msm_gpio 49 0>;
 		ehang,high-delay=<1000>;
 		ehang,low-delay=<5000>;
 	};
@@ -366,6 +368,12 @@
 		a8,plat-off-delay = <19000>;
 		status = "okay";
 	};
+	suspend_tm {
+		compatible = "suspend-timeout";
+		a3xxx-project = "A3002";
+		a3xxx,virt-gpio = <692 0>;
+		status = "okay";
+	};
 };
 
 /* add by shengweiguang for usb gadget 20150817 begin */
@@ -405,15 +413,7 @@
 			linux,code = <115>;
 			gpio-key,wakeup;
 			debounce-interval = <15>;
-		};/*
-		obc_key {
-			label = "obc_key";
-			gpios = <&msm_gpio 112 0x1>;
-			linux,input-type = <1>;
-			linux,code = <60>;
-			gpio-key,wakeup;
-			debounce-interval = <15>;
-		};*/	
+		};
 	};
 };
 
