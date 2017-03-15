@@ -40,6 +40,7 @@
 #include <linux/irqchip/msm-mpm-irq.h>
 #include <linux/mutex.h>
 #include <asm/arch_timer.h>
+#include <linux/clk/msm-clk-provider.h>
 
 enum {
 	MSM_MPM_GIC_IRQ_DOMAIN,
@@ -505,12 +506,10 @@ static bool msm_mpm_interrupts_detectable(int d, bool from_idle)
 	if (debug_mask && !ret) {
 		int i = 0;
 		i = find_first_bit(irq_bitmap, unlisted->size);
-		pr_info("%s(): %s preventing system sleep modes during %s\n",
-				__func__, unlisted->domain_name,
-				from_idle ? "idle" : "suspend");
+		pr_notice("%s preventing system sleep modes during %s\n", unlisted->domain_name, from_idle ? "idle" : "suspend");
 
 		while (i < unlisted->size) {
-			pr_info("\thwirq: %d\n", i);
+			pr_notice("\thwirq: %d\n", i);
 			i = find_next_bit(irq_bitmap, unlisted->size, i + 1);
 		}
 	}
@@ -620,6 +619,7 @@ static void msm_mpm_sys_low_power_modes(bool allow)
 		}
 	}
 	mutex_unlock(&enable_xo_mutex);
+//    pr_notice("clk[xo, %lu, %d]\n", clk_get_rate(xo_clk), allow);
 }
 
 void msm_mpm_suspend_prepare(void)
@@ -627,6 +627,7 @@ void msm_mpm_suspend_prepare(void)
 	bool allow;
 	unsigned long flags;
 
+    pr_notice("\n");
 	spin_lock_irqsave(&msm_mpm_lock, flags);
 
 	allow = msm_mpm_irqs_detectable(false) &&
@@ -643,6 +644,7 @@ void msm_mpm_suspend_wake(void)
 	bool allow;
 	unsigned long flags;
 
+    pr_notice("\n");
 	spin_lock_irqsave(&msm_mpm_lock, flags);
 
 	allow = msm_mpm_irqs_detectable(true) &&
