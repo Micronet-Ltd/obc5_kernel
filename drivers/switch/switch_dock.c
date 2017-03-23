@@ -84,7 +84,7 @@ static void dock_switch_work_func(struct work_struct *work)
 
 	if (ds->state != val) {
 		ds->state = val;
-		switch_set_state(&ds->sdev, val ? 1 : 0);
+		switch_set_state(&ds->sdev, val);
 	}
 }
 
