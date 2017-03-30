@@ -218,7 +218,7 @@ static int bmp_i2c_probe(struct i2c_client *client,
 		.client = client
 	};
 
-	pr_info("BMPPPPPPPPPPPPPPPPPPPPPPPP!!!!!\n");
+	pr_notice("BMPPPPPPPPPPPPPPPPPPPPPPPP!!!!!\n");
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		PERR("i2c_check_functionality error!");
 		return -EIO;
@@ -272,6 +272,7 @@ static int bmp_i2c_remove(struct i2c_client *client)
 */
 static int bmp_i2c_suspend(struct device *dev)
 {
+	pr_notice("SWG bmp280 suspend !!!!\n");
 	return bmp_disable(dev);
 }
 
@@ -285,6 +286,7 @@ static int bmp_i2c_suspend(struct device *dev)
 */
 static int bmp_i2c_resume(struct device *dev)
 {
+	pr_notice("SWG bmp280 resume !!!!\n");
 	return bmp_enable(dev);
 }
 
@@ -342,7 +344,7 @@ static struct i2c_driver bmp_i2c_driver = {
 */
 static int __init bmp_i2c_init(void)
 {
-	pr_info("BMP1111111111123! ! ! !\n");
+	pr_notice("BMP1111111111123! ! ! !\n");
 	return i2c_add_driver(&bmp_i2c_driver);
 }
 

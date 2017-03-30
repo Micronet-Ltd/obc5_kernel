@@ -10,6 +10,7 @@
  * GNU General Public License for more details.
  *
  */
+#define pr_fmt(fmt)	"CHG: %s: " fmt, __func__
 
 #include <linux/module.h>
 #include <linux/device.h>
@@ -2574,6 +2575,7 @@ static void msm_otg_chg_check_timer_func(unsigned long data)
 {
 	struct msm_otg *motg = (struct msm_otg *) data;
 	struct usb_otg *otg = motg->phy.otg;
+    uint32_t psc;
 
 	if (atomic_read(&motg->in_lpm) ||
 		!test_bit(B_SESS_VLD, &motg->inputs) ||
@@ -2583,13 +2585,17 @@ static void msm_otg_chg_check_timer_func(unsigned long data)
 		return;
 	}
 
-	if ((readl_relaxed(USB_PORTSC) & PORTSC_LS) == PORTSC_LS) {
+    psc = readl_relaxed(USB_PORTSC);
+	if ((psc & PORTSC_LS) == PORTSC_LS) {
 		dev_dbg(otg->phy->dev, "DCP is detected as SDP\n");
 		msm_otg_dbg_log_event(&motg->phy, "DCP IS DETECTED AS SDP",
 				otg->phy->state, 0);
 		set_bit(B_FALSE_SDP, &motg->inputs);
 		queue_work(motg->otg_wq, &motg->sm_work);
-	}
+    } else if (((psc & PORTSC_LS) == (PORTSC_LS & (~PORTSC_LS_DM))) && (psc & PORTSC_SUSP_MASK)) {
+        pr_notice("j-state same as port idle %d\n", motg->chg_type);
+        msm_otg_set_power(otg->phy, IDEV_ACA_CHG_MAX); 
+    }
 }
 
 static bool msm_chg_aca_detect(struct msm_otg *motg)
@@ -3109,6 +3115,7 @@ static void msm_chg_detect_work(struct work_struct *w)
 		 * Notify the charger type to power supply
 		 * owner as soon as we determine the charger.
 		 */
+        pr_notice("ch type %d\n", motg->chg_type);
 		if (motg->chg_type == USB_DCP_CHARGER &&
 			motg->ext_chg_opened) {
 				init_completion(&motg->ext_chg_wait);
@@ -4714,6 +4721,12 @@ static int otg_power_set_property_usb(struct power_supply *psy,
 	/* The ONLINE property reflects if usb has enumerated */
 	case POWER_SUPPLY_PROP_ONLINE:
 		motg->online = val->intval;
+        if (motg->online) {
+            wake_lock(&motg->wlock); 
+        } else {
+            wake_unlock(&motg->wlock);
+        }
+        pr_notice("POWER_SUPPLY_PROP_ONLINE %u\n", motg->online);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 		motg->voltage_max = val->intval;
