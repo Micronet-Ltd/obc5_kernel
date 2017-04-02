@@ -660,8 +660,11 @@ static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 	}
 skip:
 	chip->charger_disabled = disabled;
-    pr_notice("%s: [%x, %d]\n", __func__, chip->charger_disabled, enable);
-	return rc;
+    if (reason & THERMAL) {
+        pr_notice("%s: [%x, %d]\n", __func__, chip->charger_disabled, enable); 
+    }
+
+    return rc;
 }
 
 static int qpnp_lbc_is_batt_present(struct qpnp_lbc_chip *chip)

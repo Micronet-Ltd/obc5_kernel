@@ -104,11 +104,11 @@ enum msm_usb_phy_type {
 	SNPS_FEMTO_PHY,
 };
 
-#define IDEV_CHG_MAX	1000 // by skj
+#define IDEV_CHG_MAX	1000
 #define IDEV_CHG_MIN	500
 #define IUNIT		100
 
-#define IDEV_ACA_CHG_MAX	1000 // by skj
+#define IDEV_ACA_CHG_MAX	1000
 #define IDEV_ACA_CHG_LIMIT	500
 
 /**
@@ -567,6 +567,7 @@ struct msm_otg {
 	unsigned int dbg_idx;
 	rwlock_t dbg_lock;
 	char (buf[DEBUG_MAX_MSG])[DEBUG_MSG_LEN];   /* buffer */
+    struct wake_lock chg_wlock;
 };
 
 struct ci13xxx_platform_data {
