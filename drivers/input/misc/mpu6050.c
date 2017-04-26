@@ -3669,7 +3669,7 @@ static int mpu6050_suspend(struct device *dev)
 #endif
 		sensor->cfg.mot_det_on = 1;
 		if (ret == 0) {
-			irq_set_irq_wake(client->irq, 1);
+			//irq_set_irq_wake(client->irq, 1);
 			pr_info("Howard Enable motion detection success, irq_set_irq_wake 1\n");
 			dev_dbg(&client->dev,
 				"Enable motion detection success\n");
@@ -3725,7 +3725,7 @@ static int mpu6050_resume(struct device *dev)
 
 	if (sensor->cfg.mot_det_on) {
 		/* keep accel on and config motion detection wakeup */
-		irq_set_irq_wake(client->irq, 0);
+		//irq_set_irq_wake(client->irq, 0);
 #if 0
 		mpu6050_set_motion_det(sensor, false);
 		mpu6050_set_interrupt(sensor,
