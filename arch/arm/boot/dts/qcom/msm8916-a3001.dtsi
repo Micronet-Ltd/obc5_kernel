@@ -547,7 +547,8 @@
 };
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_h8394f_dt720128055_hd_video>;
+/*	qcom,dsi-pref-prim-pan = <&dsi_h8394f_dt720128055_hd_video>;*/
+	qcom,dsi-pref-prim-pan = <&dsi_h8394d_txd_innolux5p5_hd_vid>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
