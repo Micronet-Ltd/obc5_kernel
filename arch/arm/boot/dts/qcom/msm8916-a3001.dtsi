@@ -126,6 +126,7 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&usbid_default>;
 		qcom,hsusb-otg-mode = <3>;
+		qcom,hsusb-otg-lpm-on-dev-suspend;
 	};		
 	
 	i2c@78b6000 { /* BLSP1 QUP2 */
@@ -586,10 +587,10 @@
 &pm8916_chg {
 	status = "ok";
 	/* by skj */
-	qcom,vddmax-mv = <4200>;
-	qcom,vddsafe-mv = <4200>;
-	qcom,cool-bat-mv = <4100>;
-	qcom,warm-bat-mv = <4100>;	
+	qcom,vddmax-mv = <4350>;
+	qcom,vddsafe-mv = <4350>;
+	qcom,cool-bat-mv = <4200>;
+	qcom,warm-bat-mv = <4200>;	
 };
 
 / {
