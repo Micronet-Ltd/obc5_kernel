@@ -4121,7 +4121,7 @@ static int bms_suspend(struct device *dev)
 	if (!battery_charging && !hi_power_state && !bms_suspend_config)
 		chip->apply_suspend_config = true;
 
-	pr_debug("battery_charging=%d power_state=%s hi_power_state=0x%x apply_suspend_config=%d bms_suspend_config=%d usb_present=%d\n",
+	pr_notice("battery_charging=%d power_state=%s hi_power_state=0x%x apply_suspend_config=%d bms_suspend_config=%d usb_present=%d\n",
 			battery_charging, hi_power_state ? "hi" : "low",
 				chip->hi_power_state,
 				chip->apply_suspend_config, bms_suspend_config,
