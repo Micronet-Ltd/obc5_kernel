@@ -6,6 +6,7 @@
  */
 
 #define pr_fmt(fmt) "%s: " fmt, __func__
+#include <linux/kconfig.h>
 //#include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -21,7 +22,14 @@
 
 #include <linux/notifier.h>
 
+#if defined  (CONFIG_PRODUCT_A3001)
+static int32_t gpio_in_register_notifier(struct notifier_block *nb)
+{
+    return 0;
+}
+#else
 extern int32_t gpio_in_register_notifier(struct notifier_block *nb);
+#endif
 
 #define SWITCH_DOCK	(1 << 0)
 #define SWITCH_IGN  (1 << 1)
