@@ -11,11 +11,11 @@
  */
 
 qcom,a3001-4v35-1850mah-batterydata {
-	qcom,fcc-mah = <1850>;
+	qcom,fcc-mah = <1900>;
 	qcom,default-rbatt-mohm = <160>;
 	qcom,rbatt-capacitive-mohm = <80>;
 	qcom,flat-ocv-threshold-uv = <3800000>;
-	qcom,max-voltage-uv = <4350000>;
+	qcom,max-voltage-uv = <4200000>;
 	qcom,v-cutoff-uv = <3400000>;
 	qcom,chg-term-ua = <100000>;
 	qcom,batt-id-kohm = <80>;

@@ -567,11 +567,22 @@ void msm_mpm_exit_sleep(bool from_idle)
 
 	for (i = 0; i < MSM_MPM_REG_WIDTH; i++) {
 		pending = msm_mpm_read(MSM_MPM_REG_STATUS, i);
+        if (0 /*!from_idle && (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)*/) {
+            k = find_first_bit(&pending, 32);
+            while (k < 32) {
+                unsigned int mpm_irq = 32 * i + k;
+                unsigned int apps_irq = msm_mpm_get_irq_m2a(mpm_irq);
+                struct irq_desc *desc = apps_irq ? irq_to_desc(apps_irq) : 0;
+
+                pr_notice("pending irq[%d, %d] %s\n", apps_irq, mpm_irq, (desc)?(desc->action && desc->action->name)?desc->action->name:"no name irq":"no irq");
+
+                k = find_next_bit(&pending, 32, k + 1);
+            }
+        }
 		pending &= enabled_intr[i];
 
 		if (!from_idle && (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)) {
-			pr_info("%s: enabled_intr.%d pending.%d: 0x%08x 0x%08lx\n",
-                __func__, i, i, enabled_intr[i], pending);
+			pr_info("enabled_intr.%d 0x%08x pending.%d: 0x%08lx\n", i, enabled_intr[i], i, pending);
         }
 
 		k = find_first_bit(&pending, 32);
@@ -582,7 +593,7 @@ void msm_mpm_exit_sleep(bool from_idle)
 				irq_to_desc(apps_irq) : NULL;
 
             if (!from_idle && (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)) {
-                pr_notice("wake irq[%d]\n", apps_irq);
+                pr_notice("wake irq[%d, %d] %s\n", apps_irq, mpm_irq, (desc)?(desc->action && desc->action->name)?desc->action->name:"no name irq":"no irq");
             }
 
 			if (desc && !irqd_is_level_type(&desc->irq_data)) {
