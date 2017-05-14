@@ -1017,6 +1017,7 @@ static int msm_otg_set_suspend(struct usb_phy *phy, int suspend)
 					motg->inputs, phy->state);
 			if (!(motg->caps & ALLOW_LPM_ON_DEV_SUSPEND))
 				break;
+			dev_notice(phy->dev, "peripheral bus suspend\n");
 			set_bit(A_BUS_SUSPEND, &motg->inputs);
 			if (!atomic_read(&motg->in_lpm))
 				queue_delayed_work(motg->otg_wq,
@@ -1395,6 +1396,13 @@ lpm_start:
 	 * 3. !BSV, but its handling is in progress by otg sm_work
 	 */
 
+	dev_notice(phy->dev, "caps %lx\n", motg->caps);
+	dev_notice(phy->dev, "charger%splugged\n", (prop_charger)?" ":" not ");
+	dev_notice(phy->dev, "dcp charger%splugged\n", (dcp)?" ":" not ");
+	dev_notice(phy->dev, "float charger%splugged\n", (floated_charger)?" ":" not ");
+	dev_notice(phy->dev, "sm_work%sbusy\n", (sm_work_busy)?" ":" not ");
+	dev_notice(phy->dev, "inputs [%lx]\n", motg->inputs);
+
 	if ((test_bit(B_SESS_VLD, &motg->inputs) && !device_bus_suspend &&
 		!dcp && !prop_charger && !floated_charger) ||
 		test_bit(A_BUS_REQ, &motg->inputs) || sm_work_busy) {
@@ -1403,12 +1411,8 @@ lpm_start:
 		if (test_bit(A_BUS_REQ, &motg->inputs))
 			motg->pm_done = 1;
 		motg->ui_enabled = 1;
+		dev_notice(phy->dev, "abort lpm bus%ssuspended\n", (device_bus_suspend)?" ":" not ");
 		enable_irq(motg->irq);
-        dev_notice(phy->dev, "charger%splugged\n", (prop_charger)?" ":" not ");
-        dev_notice(phy->dev, "dcp charger%splugged\n", (dcp)?" ":" not ");
-        dev_notice(phy->dev, "float charger%splugged\n", (floated_charger)?" ":" not ");
-        dev_notice(phy->dev, "sm_work%sbusy\n", (sm_work_busy)?" ":" not ");
-        dev_notice(phy->dev, "abort lpm bus%ssuspended, [%lx]\n", (device_bus_suspend)?" ":" not ", motg->inputs);
 		return -EBUSY;
 	}
 
@@ -4221,12 +4225,15 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 		switch (otg->phy->state) {
 		case OTG_STATE_B_PERIPHERAL:
 			if (otg->gadget->b_hnp_enable) {
+				pr_notice("%s: peripheral b bus suspend\n", __func__);
 				set_bit(A_BUS_SUSPEND, &motg->inputs);
 				set_bit(B_BUS_REQ, &motg->inputs);
 				work = 1;
 			}
 			break;
 		case OTG_STATE_A_PERIPHERAL:
+			pr_notice("%s: peripheral a bus suspend\n", __func__);
+//			set_bit(A_BUS_SUSPEND, &motg->inputs);
 			msm_otg_start_timer(motg, TA_BIDL_ADIS,
 					A_BIDL_ADIS);
 			break;
@@ -5888,6 +5895,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 	if (pdata->enable_sec_phy)
 		phy->flags |= ENABLE_SECONDARY_PHY;
 
+	set_bit(A_BUS_SUSPEND, &motg->inputs);
 	ret = usb_add_phy(&motg->phy, USB_PHY_TYPE_USB2);
 	if (ret) {
 		dev_err(&pdev->dev, "usb_add_phy failed\n");
@@ -6007,7 +6015,8 @@ static int msm_otg_probe(struct platform_device *pdev)
 	if (motg->pdata->phy_dvdd_always_on)
 		motg->caps |= ALLOW_BUS_SUSPEND_WITHOUT_REWORK;
 
-    wake_lock(&motg->wlock);
+//    wake_lock(&motg->wlock);
+	wake_lock_timeout(&motg->wlock, msecs_to_jiffies(OTG_SUSPEND_WAKE_LOCK_DELAY));
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
 

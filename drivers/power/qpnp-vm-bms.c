@@ -501,9 +501,11 @@ static bool is_battery_charging(struct qpnp_bms_chip *chip)
 		chip->batt_psy = power_supply_get_by_name("battery");
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the type property */
-		chip->batt_psy->get_property(chip->batt_psy,
-					POWER_SUPPLY_PROP_CHARGE_TYPE, &ret);
-		return ret.intval != POWER_SUPPLY_CHARGE_TYPE_NONE;
+		//chip->batt_psy->get_property(chip->batt_psy,
+		//			POWER_SUPPLY_PROP_CHARGE_TYPE, &ret);
+		//return ret.intval != POWER_SUPPLY_CHARGE_TYPE_NONE;
+        chip->batt_psy->get_property(chip->batt_psy, POWER_SUPPLY_PROP_STATUS, &ret);
+        return (ret.intval == POWER_SUPPLY_STATUS_CHARGING);
 	}
 
 	/* Default to false if the battery power supply is not registered. */
@@ -2377,6 +2379,9 @@ static void bms_new_battery_setup(struct qpnp_bms_chip *chip)
 		if (rc)
 			pr_err("Unable to reset aging data rc=%d\n", rc);
 	}
+	if (chip->bms_dev_open) {
+		pm_relax(chip->dev);
+	}
 }
 
 static void battery_insertion_check(struct qpnp_bms_chip *chip)
@@ -3131,10 +3136,11 @@ static ssize_t vm_bms_read(struct file *file, char __user *buf, size_t count,
 	/* wakelock-timeout for userspace to pick up */
 	pm_wakeup_event(chip->dev, BMS_READ_TIMEOUT);
 
-	return sizeof(chip->bms_data);
+	rc = sizeof(chip->bms_data);
 
 fail_read:
 	pm_relax(chip->dev);
+
 	return rc;
 }
 
@@ -4093,8 +4099,8 @@ static void process_resume_data(struct qpnp_bms_chip *chip)
 
 		chip->data_ready = 1;
 		wake_up_interruptible(&chip->bms_wait_q);
-		if (chip->bms_dev_open)
-			pm_stay_awake(chip->dev);
+//		if (chip->bms_dev_open)
+//			pm_stay_awake(chip->dev);
 
 	}
 	chip->suspend_data_valid = false;
@@ -4104,7 +4110,8 @@ static void process_resume_data(struct qpnp_bms_chip *chip)
 static int bms_suspend(struct device *dev)
 {
 	struct qpnp_bms_chip *chip = dev_get_drvdata(dev);
-	bool battery_charging = is_battery_charging(chip);
+//	bool battery_charging = (get_battery_status(chip) == POWER_SUPPLY_STATUS_CHARGING);
+    bool battery_charging = is_battery_charging(chip);
 	bool hi_power_state = is_hi_power_state_requested(chip);
 	bool charger_present = is_charger_present(chip);
 	bool bms_suspend_config;

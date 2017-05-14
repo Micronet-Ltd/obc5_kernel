@@ -1389,8 +1389,8 @@ out:
 	return rc;
 }
 
-#define MIN_COOL_TEMP		-300
-#define MAX_WARM_TEMP		450 //1000
+#define MIN_COOL_TEMP		-200
+#define MAX_WARM_TEMP		500 //1000
 #define HYSTERISIS_DECIDEGC	20
 
 static int qpnp_lbc_configure_jeita(struct qpnp_lbc_chip *chip,
@@ -1688,11 +1688,11 @@ static int qpnp_lbc_parallel_charging_config(struct qpnp_lbc_chip *chip,
 		chip->ichg_now = QPNP_LBC_IBATMAX_MIN;
 		qpnp_lbc_ibatmax_set(chip, chip->ichg_now);
 		qpnp_lbc_charger_enable(chip, PARALLEL, 1);
-//		pm_stay_awake(chip->dev);
+		pm_stay_awake(chip->dev);
 		schedule_delayed_work(&chip->parallel_work, VINMIN_DELAY);
 	} else {
 		cancel_delayed_work_sync(&chip->parallel_work);
-//		pm_relax(chip->dev);
+		pm_relax(chip->dev);
 		/* set minimum charging current and disable charging */
 		chip->ichg_now = 0;
 		chip->lbc_max_chg_current = 0;
@@ -2823,7 +2823,6 @@ out:
 	kt = ns_to_ktime(TRIM_PERIOD_NS);
 	alarm_start_relative(&chip->vddtrim_alarm, kt);
 exit:
-    pr_notice("relax\n");
 	pm_relax(chip->dev);
 }
 
@@ -2833,7 +2832,6 @@ static enum alarmtimer_restart vddtrim_callback(struct alarm *alarm,
 	struct qpnp_lbc_chip *chip = container_of(alarm, struct qpnp_lbc_chip,
 						vddtrim_alarm);
 
-    pr_notice("awake\n");
 	pm_stay_awake(chip->dev);
 	schedule_work(&chip->vddtrim_work);
 
