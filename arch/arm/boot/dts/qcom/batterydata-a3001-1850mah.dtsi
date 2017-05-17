@@ -13,17 +13,17 @@
 qcom,a3001-4v35-1850mah-batterydata {
 	qcom,fcc-mah = <1900>;
 	qcom,default-rbatt-mohm = <160>;
-	qcom,rbatt-capacitive-mohm = <80>;
+	qcom,rbatt-capacitive-mohm = <85>;
 	qcom,flat-ocv-threshold-uv = <3800000>;
 	qcom,max-voltage-uv = <4200000>;
-	qcom,v-cutoff-uv = <3400000>;
+	qcom,v-cutoff-uv = <3000000>;
 	qcom,chg-term-ua = <100000>;
-	qcom,batt-id-kohm = <80>;
+	qcom,batt-id-kohm = <200>;
 	qcom,battery-type = "a3001-4v35-1850mah";
 
 	qcom,fcc-temp-lut {
 		qcom,lut-col-legend = <(-20) 0 25 40 60>;
-		qcom,lut-data = <1832 1824 1823 1820 1809>;
+		qcom,lut-data = <1140 1330 1900 1862 1805>;
 	};
 
 	qcom,pc-temp-ocv-lut {
@@ -113,7 +113,7 @@ qcom,a3001-4v35-1850mah-batterydata {
 	qcom,ibat-acc-lut {
 		qcom,lut-col-legend = <(-20) 0 25>;
 		qcom,lut-row-legend = <0 250 500 1000>;
-		qcom,lut-data = <1795 1787 1786>,
+		qcom,lut-data = <1800 1800 1795>,
 				<1275 1752 1761>,
 				<590 1628 1743>,
 				<45 968 1661>;
