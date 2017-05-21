@@ -1865,11 +1865,11 @@ static void cv_voltage_check(struct qpnp_bms_chip *chip, int vbat_uv)
 		if ((vbat_uv < (chip->dt.cfg_max_voltage_uv -
 				VBATT_ERROR_MARGIN + CV_DROP_MARGIN))
 			&& !is_battery_taper_charging(chip)) {
-			pr_debug("Fell below CV, releasing cv ws\n");
+            pr_notice("%duV relax\n", vbat_uv);
 			chip->in_cv_state = false;
 			bms_relax(&chip->vbms_cv_wake_source);
 		} else if (!is_battery_charging(chip)) {
-			pr_debug("charging stopped, releasing cv ws\n");
+			pr_notice("charging stopped, relax\n");
 			chip->in_cv_state = false;
 			bms_relax(&chip->vbms_cv_wake_source);
 		}
@@ -1878,7 +1878,7 @@ static void cv_voltage_check(struct qpnp_bms_chip *chip, int vbat_uv)
 			&& ((vbat_uv > (chip->dt.cfg_max_voltage_uv -
 					VBATT_ERROR_MARGIN))
 				|| is_battery_taper_charging(chip))) {
-		pr_debug("CC_TO_CV voltage=%d holding cv ws\n", vbat_uv);
+		pr_notice("%duV awake\n", vbat_uv);
 		chip->in_cv_state = true;
 		bms_stay_awake(&chip->vbms_cv_wake_source);
 	}
@@ -2056,7 +2056,8 @@ static void monitor_soc_work(struct work_struct *work)
 				monitor_soc_work.work);
 	int rc, new_soc = 0, batt_temp;
 
-	bms_stay_awake(&chip->vbms_soc_wake_source);
+//	bms_stay_awake(&chip->vbms_soc_wake_source);
+    pm_stay_awake(chip->dev);
 
 	calculate_delta_time(&chip->tm_sec, &chip->delta_time_s);
 	pr_debug("elapsed_time=%d\n", chip->delta_time_s);
@@ -2142,7 +2143,8 @@ static void monitor_soc_work(struct work_struct *work)
 
 	mutex_unlock(&chip->last_soc_mutex);
 
-	bms_relax(&chip->vbms_soc_wake_source);
+//	bms_relax(&chip->vbms_soc_wake_source);
+    pm_relax(chip->dev);
 }
 
 static void voltage_soc_timeout_work(struct work_struct *work)
