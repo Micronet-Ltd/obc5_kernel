@@ -501,9 +501,11 @@ static bool is_battery_charging(struct qpnp_bms_chip *chip)
 		chip->batt_psy = power_supply_get_by_name("battery");
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the type property */
-		chip->batt_psy->get_property(chip->batt_psy,
-					POWER_SUPPLY_PROP_CHARGE_TYPE, &ret);
-		return ret.intval != POWER_SUPPLY_CHARGE_TYPE_NONE;
+		//chip->batt_psy->get_property(chip->batt_psy,
+		//			POWER_SUPPLY_PROP_CHARGE_TYPE, &ret);
+		//return ret.intval != POWER_SUPPLY_CHARGE_TYPE_NONE;
+        chip->batt_psy->get_property(chip->batt_psy, POWER_SUPPLY_PROP_STATUS, &ret);
+        return (ret.intval == POWER_SUPPLY_STATUS_CHARGING);
 	}
 
 	/* Default to false if the battery power supply is not registered. */
@@ -1863,11 +1865,11 @@ static void cv_voltage_check(struct qpnp_bms_chip *chip, int vbat_uv)
 		if ((vbat_uv < (chip->dt.cfg_max_voltage_uv -
 				VBATT_ERROR_MARGIN + CV_DROP_MARGIN))
 			&& !is_battery_taper_charging(chip)) {
-			pr_debug("Fell below CV, releasing cv ws\n");
+            pr_notice("%duV relax\n", vbat_uv);
 			chip->in_cv_state = false;
 			bms_relax(&chip->vbms_cv_wake_source);
 		} else if (!is_battery_charging(chip)) {
-			pr_debug("charging stopped, releasing cv ws\n");
+			pr_notice("charging stopped, relax\n");
 			chip->in_cv_state = false;
 			bms_relax(&chip->vbms_cv_wake_source);
 		}
@@ -1876,7 +1878,7 @@ static void cv_voltage_check(struct qpnp_bms_chip *chip, int vbat_uv)
 			&& ((vbat_uv > (chip->dt.cfg_max_voltage_uv -
 					VBATT_ERROR_MARGIN))
 				|| is_battery_taper_charging(chip))) {
-		pr_debug("CC_TO_CV voltage=%d holding cv ws\n", vbat_uv);
+		pr_notice("%duV awake\n", vbat_uv);
 		chip->in_cv_state = true;
 		bms_stay_awake(&chip->vbms_cv_wake_source);
 	}
@@ -2054,7 +2056,8 @@ static void monitor_soc_work(struct work_struct *work)
 				monitor_soc_work.work);
 	int rc, new_soc = 0, batt_temp;
 
-	bms_stay_awake(&chip->vbms_soc_wake_source);
+//	bms_stay_awake(&chip->vbms_soc_wake_source);
+    pm_stay_awake(chip->dev);
 
 	calculate_delta_time(&chip->tm_sec, &chip->delta_time_s);
 	pr_debug("elapsed_time=%d\n", chip->delta_time_s);
@@ -2140,7 +2143,8 @@ static void monitor_soc_work(struct work_struct *work)
 
 	mutex_unlock(&chip->last_soc_mutex);
 
-	bms_relax(&chip->vbms_soc_wake_source);
+//	bms_relax(&chip->vbms_soc_wake_source);
+    pm_relax(chip->dev);
 }
 
 static void voltage_soc_timeout_work(struct work_struct *work)
@@ -2376,6 +2380,9 @@ static void bms_new_battery_setup(struct qpnp_bms_chip *chip)
 		rc = backup_charge_cycle(chip);
 		if (rc)
 			pr_err("Unable to reset aging data rc=%d\n", rc);
+	}
+	if (chip->bms_dev_open) {
+		pm_relax(chip->dev);
 	}
 }
 
@@ -3131,10 +3138,11 @@ static ssize_t vm_bms_read(struct file *file, char __user *buf, size_t count,
 	/* wakelock-timeout for userspace to pick up */
 	pm_wakeup_event(chip->dev, BMS_READ_TIMEOUT);
 
-	return sizeof(chip->bms_data);
+	rc = sizeof(chip->bms_data);
 
 fail_read:
 	pm_relax(chip->dev);
+
 	return rc;
 }
 
@@ -4093,8 +4101,8 @@ static void process_resume_data(struct qpnp_bms_chip *chip)
 
 		chip->data_ready = 1;
 		wake_up_interruptible(&chip->bms_wait_q);
-		if (chip->bms_dev_open)
-			pm_stay_awake(chip->dev);
+//		if (chip->bms_dev_open)
+//			pm_stay_awake(chip->dev);
 
 	}
 	chip->suspend_data_valid = false;
@@ -4104,7 +4112,8 @@ static void process_resume_data(struct qpnp_bms_chip *chip)
 static int bms_suspend(struct device *dev)
 {
 	struct qpnp_bms_chip *chip = dev_get_drvdata(dev);
-	bool battery_charging = is_battery_charging(chip);
+//	bool battery_charging = (get_battery_status(chip) == POWER_SUPPLY_STATUS_CHARGING);
+    bool battery_charging = is_battery_charging(chip);
 	bool hi_power_state = is_hi_power_state_requested(chip);
 	bool charger_present = is_charger_present(chip);
 	bool bms_suspend_config;
@@ -4121,7 +4130,7 @@ static int bms_suspend(struct device *dev)
 	if (!battery_charging && !hi_power_state && !bms_suspend_config)
 		chip->apply_suspend_config = true;
 
-	pr_debug("battery_charging=%d power_state=%s hi_power_state=0x%x apply_suspend_config=%d bms_suspend_config=%d usb_present=%d\n",
+	pr_notice("battery_charging=%d power_state=%s hi_power_state=0x%x apply_suspend_config=%d bms_suspend_config=%d usb_present=%d\n",
 			battery_charging, hi_power_state ? "hi" : "low",
 				chip->hi_power_state,
 				chip->apply_suspend_config, bms_suspend_config,

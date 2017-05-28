@@ -6,6 +6,7 @@
  */
 
 #define pr_fmt(fmt) "%s: " fmt, __func__
+#include <linux/kconfig.h>
 //#include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -19,8 +20,23 @@
 #include <linux/workqueue.h>
 #include <linux/wakelock.h>
 
+#include <linux/notifier.h>
+
+#if defined  (CONFIG_PRODUCT_A3001)
+static int32_t gpio_in_register_notifier(struct notifier_block *nb)
+{
+    return 0;
+}
+#else
+extern int32_t gpio_in_register_notifier(struct notifier_block *nb);
+#endif
+
 #define SWITCH_DOCK	(1 << 0)
 #define SWITCH_IGN  (1 << 1)
+
+#define VIRT_GPIO_OFF	0
+#define VIRT_GPIO_INIT	1
+#define VIRT_GPIO_ON	2
 
 struct dock_switch_device {
 	struct  switch_dev sdev;
@@ -35,6 +51,10 @@ struct dock_switch_device {
     unsigned sched_irq;
 	int	    state;
     struct wake_lock wlock;
+	struct  device*			 pdev;
+    struct 	notifier_block   ignition_notifier;
+    int		virt_gpio_offset;
+    int		virt_init;
 };
 
 static void dock_switch_work_func(struct work_struct *work) 
@@ -87,7 +107,46 @@ static void dock_switch_work_func(struct work_struct *work)
 		switch_set_state(&ds->sdev, val);
 	}
 }
+static void dock_switch_work_virt_func(struct work_struct *work)
+{
+	struct dock_switch_device *ds  = container_of(work, struct dock_switch_device, work);
+    int val = 0, err;
 
+    if(VIRT_GPIO_OFF == ds->virt_init)
+    	return;
+
+	if(VIRT_GPIO_INIT == ds->virt_init)
+	{
+		if(gpio_is_valid(ds->ign_pin)) {
+			err = devm_gpio_request(ds->pdev, ds->ign_pin, "ignition-state");//pdev->name);
+			if (err < 0) {
+				pr_err("failure to request the gpio[%d]\n", ds->ign_pin);
+				return;
+			}
+			else {
+				ds->virt_init = VIRT_GPIO_ON;
+				gpio_direction_input(ds->ign_pin);
+				gpio_export(ds->ign_pin, 0);
+		        pr_notice("virt gpio is initialized\n");
+			}
+		}
+		else
+		{
+			pr_err("ign gpio [%d] is not valid\n", ds->ign_pin);
+			return;
+		}
+	}
+
+    if (ds->ign_active_l == gpio_get_value(ds->ign_pin) ) {
+        val |= SWITCH_IGN;
+    }
+
+    if (ds->state != val) {
+        pr_notice("ignition changed to %d\n", val);
+		ds->state = val;
+		switch_set_state(&ds->sdev, val);
+	}
+}
 static irqreturn_t dock_switch_irq_handler(int irq, void *arg)
 {
 	struct dock_switch_device *ds = (struct dock_switch_device *)arg;
@@ -115,12 +174,39 @@ static ssize_t dock_switch_print_state(struct switch_dev *sdev, char *buffer)
 	return sprintf(buffer, "%d", ds->state);
 }
 
+static int32_t __ref dock_switch_ign_callback(struct notifier_block *nfb, unsigned long reason, void *arg)
+{
+    struct dock_switch_device *ds = container_of(nfb, struct dock_switch_device, ignition_notifier);
+    unsigned long val = 0;
+
+    if(0 == reason)
+    {
+        pr_notice("%ld\n", reason);
+		ds->virt_init = VIRT_GPIO_INIT;
+   		schedule_work(&ds->work);
+    }
+    else if(1 == reason)
+    {
+        if(arg) {
+        	val = *((unsigned long*)arg);
+            pr_notice("%ld - %ld\n", reason, val);
+        	if (val & (1 << ds->virt_gpio_offset)) {
+        		schedule_work(&ds->work);
+        	}
+        }
+    }
+    return NOTIFY_OK;
+}
+
 static int dock_switch_probe(struct platform_device *pdev)
 {
 	int err;
 	struct dock_switch_device *ds;
     struct device *dev = &pdev->dev;
     struct device_node *np;
+    int32_t	proj_num = 1;//TREQ_5
+    const char *proj;
+    uint32_t arr[2] = {0};
 	
     np = dev->of_node;
     if (!np) {
@@ -132,98 +218,163 @@ static int dock_switch_probe(struct platform_device *pdev)
 	if (!ds)
 		return -ENOMEM;
 
-    do {
-        err = of_get_named_gpio_flags(np, "treq5,dock-pin", 0, (enum of_gpio_flags *)&ds->dock_active_l);
-        if (!gpio_is_valid(err)) {
-            pr_err("ivalid docking pin\n");
-            err = -EINVAL;
-            break;
-        }
+///
+    proj = of_get_property(np, "compatible", NULL);
+    if(proj && 0 == strncmp("treqr5,dock-switch", proj, 18))
+    {
+        proj_num = 2;
+    }
+    pr_notice("project A300%d\n", proj_num);
+///
 
-        INIT_WORK(&ds->work, dock_switch_work_func);
+    do {
+		if(1 == proj_num)
+		{
+			err = of_get_named_gpio_flags(np, "treq5,dock-pin", 0, (enum of_gpio_flags *)&ds->dock_active_l);
+			if (!gpio_is_valid(err)) {
+				pr_err("ivalid docking pin\n");
+				err = -EINVAL;
+				break;
+			}
+
+			INIT_WORK(&ds->work, dock_switch_work_func);
         wake_lock_init(&ds->wlock, WAKE_LOCK_SUSPEND, "switch_dock_wait_lock");
 
-        ds->dock_pin = err;
-        ds->dock_active_l = !ds->dock_active_l;
-        pr_notice("dock active level %s\n", (ds->dock_active_l)?"high":"low");
-        err = of_get_named_gpio_flags(np, "treq5,ign-pin", 0, (enum of_gpio_flags *)&ds->ign_active_l);
-        if (!gpio_is_valid(err)) {
-            pr_err("ivalid ignition pin\n");
-            err = -EINVAL;
-            break;
-        }
-        ds->ign_pin = err;
-        ds->ign_active_l = !ds->ign_active_l;
-        pr_notice("ignition active level %s\n", (ds->ign_active_l)?"high":"low");
+			ds->dock_pin = err;
+			ds->dock_active_l = !ds->dock_active_l;
+			pr_notice("dock active level %s\n", (ds->dock_active_l)?"high":"low");
+			err = of_get_named_gpio_flags(np, "treq5,ign-pin", 0, (enum of_gpio_flags *)&ds->ign_active_l);
+			if (!gpio_is_valid(err)) {
+				pr_err("ivalid ignition pin\n");
+				err = -EINVAL;
+				break;
+			}
+			ds->ign_pin = err;
+			ds->ign_active_l = !ds->ign_active_l;
+			pr_notice("ignition active level %s\n", (ds->ign_active_l)?"high":"low");
 
-        if (gpio_is_valid(ds->dock_pin)) {
-            err = devm_gpio_request(dev, ds->dock_pin, "dock-state");
-            if (err < 0) {
-                pr_err("failure to request the gpio[%d]\n", ds->dock_pin);
-                break;
-            }
-            err = gpio_direction_input(ds->dock_pin);
-            if (err < 0) {
-                pr_err("failure to set direction of the gpio[%d]\n", ds->dock_pin);
-                break;
-            }
-            gpio_export(ds->dock_pin, 0);
-            ds->dock_irq = gpio_to_irq(ds->dock_pin); 
-            if (ds->dock_irq < 0) {
-                pr_err("failure to request gpio[%d] irq\n", ds->dock_pin);
-            } else {
-                err = devm_request_irq(dev, ds->dock_irq, dock_switch_irq_handler,
-                                       IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_DISABLED,
-                                       pdev->name, ds);
-                if (!err) {
-                    disable_irq_nosync(ds->dock_irq);
-                } else {
-                    pr_err("failure to request irq[%d] irq -- polling available\n", ds->dock_irq);
-                }
-            }
+			if (gpio_is_valid(ds->dock_pin)) {
+				err = devm_gpio_request(dev, ds->dock_pin, "dock-state");
+				if (err < 0) {
+					pr_err("failure to request the gpio[%d]\n", ds->dock_pin);
+					break;
+				}
+				err = gpio_direction_input(ds->dock_pin);
+				if (err < 0) {
+					pr_err("failure to set direction of the gpio[%d]\n", ds->dock_pin);
+					break;
+				}
+				gpio_export(ds->dock_pin, 0);
+				ds->dock_irq = gpio_to_irq(ds->dock_pin);
+				if (ds->dock_irq < 0) {
+					pr_err("failure to request gpio[%d] irq\n", ds->dock_pin);
+				} else {
+					err = devm_request_irq(dev, ds->dock_irq, dock_switch_irq_handler,
+										   IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_DISABLED,
+										   pdev->name, ds);
+					if (!err) {
+						disable_irq_nosync(ds->dock_irq);
+					} else {
+						pr_err("failure to request irq[%d] irq -- polling available\n", ds->dock_irq);
+					}
+				}
 
-            ds->usb_switch_pin = of_get_named_gpio(np,"treq5,usb-switch-pin", 0);
-            if (gpio_is_valid(ds->usb_switch_pin)) {
-                err = devm_gpio_request(dev, ds->usb_switch_pin, "usb_switch");	
-                if (err) {
-                    pr_err("usb switch pin is busy!\n");
-                } else {
-                    gpio_direction_output(ds->usb_switch_pin, !!(ds->dock_active_l == gpio_get_value(ds->dock_pin)));
-                    gpio_export(ds->usb_switch_pin, 0);
-                }
-            }
-        }
+				ds->usb_switch_pin = of_get_named_gpio(np,"treq5,usb-switch-pin", 0);
+				if (gpio_is_valid(ds->usb_switch_pin)) {
+					err = devm_gpio_request(dev, ds->usb_switch_pin, "usb_switch");
+					if (err) {
+						pr_err("usb switch pin is busy!\n");
+					} else {
+						gpio_direction_output(ds->usb_switch_pin, !!(ds->dock_active_l == gpio_get_value(ds->dock_pin)));
+						gpio_export(ds->usb_switch_pin, 0);
+					}
+				}
+			}
 
-        if (gpio_is_valid(ds->ign_pin)) {
-            err = devm_gpio_request(dev, ds->ign_pin, "ignition-state");
-            if (err < 0) {
-                pr_err("failure to request the gpio[%d]\n", ds->ign_pin);
-                break;
-            }
-            err = gpio_direction_input(ds->ign_pin);
-            if (err < 0) {
-                pr_err("failure to set direction of the gpio[%d]\n", ds->ign_pin);
-                break;
-            }
-            gpio_export(ds->ign_pin, 0);
-            ds->ign_irq = gpio_to_irq(ds->ign_pin); 
-            if (ds->ign_irq < 0) {
-                pr_err("failure to request gpio[%d] irq\n", ds->ign_pin);
-            } else {
-                err = devm_request_irq(dev, ds->ign_irq, dock_switch_irq_handler,
-                                       IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_DISABLED,
-                                       pdev->name, ds);
-                if (!err) {
-                    disable_irq_nosync(ds->ign_irq);
-                } else {
-                    pr_err("failure to request irq[%d] irq -- polling available\n", ds->ign_irq);
-                }
-            }
-        }
-        if (!(ds->dock_irq < 0 && ds->ign_irq < 0)) {
-            device_init_wakeup(dev, 1);
-        }
+			if (gpio_is_valid(ds->ign_pin)) {
+				err = devm_gpio_request(dev, ds->ign_pin, "ignition-state");
+				if (err < 0) {
+					pr_err("failure to request the gpio[%d]\n", ds->ign_pin);
+					break;
+				}
+				err = gpio_direction_input(ds->ign_pin);
+				if (err < 0) {
+					pr_err("failure to set direction of the gpio[%d]\n", ds->ign_pin);
+					break;
+				}
+				gpio_export(ds->ign_pin, 0);
+				ds->ign_irq = gpio_to_irq(ds->ign_pin);
+				if (ds->ign_irq < 0) {
+					pr_err("failure to request gpio[%d] irq\n", ds->ign_pin);
+				} else {
+					err = devm_request_irq(dev, ds->ign_irq, dock_switch_irq_handler,
+										   IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_DISABLED,
+										   pdev->name, ds);
+					if (!err) {
+						disable_irq_nosync(ds->ign_irq);
+					} else {
+						pr_err("failure to request irq[%d] irq -- polling available\n", ds->ign_irq);
+					}
+				}
+			}
+			if (!(ds->dock_irq < 0 && ds->ign_irq < 0)) {
+				device_init_wakeup(dev, 1);
+			}
+		}//
+		else//proj TREQr_5
+		{
+			err = of_property_read_u32_array(np, "treqr5,virt-gpio", arr, 2);
+			if(!err)
+			{
+				err                    = arr[0];//base
+				ds->virt_gpio_offset   = arr[1];//offset
+				err += ds->virt_gpio_offset;
+				if(!gpio_is_valid(err))
+				{
+					pr_err("ivalid ignition pin\n");
+					err = -EINVAL;
+					break;
+				}
+			}
+			else
+			{
+				pr_err("cannot get ign gpio\n");
+				err = -EINVAL;
+				break;
+			}
 
+			pr_notice("ignition detect pin %d\n", err);
+			ds->ign_pin = err;
+			ds->virt_init = VIRT_GPIO_OFF;
+
+			if(gpio_is_valid(ds->ign_pin)) {
+				err = devm_gpio_request(dev, ds->ign_pin, "ignition-state");//pdev->name);
+				if (err < 0) {
+					pr_err("failure to request the gpio[%d]\n", ds->ign_pin);
+				}
+				else {
+					err = gpio_direction_input(ds->ign_pin);
+					if (err < 0) {
+						pr_err("failure to set direction of the gpio[%d]\n", ds->ign_pin);
+						break;
+					}
+					gpio_export(ds->ign_pin, 0);
+					ds->virt_init = VIRT_GPIO_ON;
+				}
+			}
+
+			ds->ign_active_l = 1;
+
+			INIT_WORK(&ds->work, dock_switch_work_virt_func);
+
+			ds->ignition_notifier.notifier_call = dock_switch_ign_callback;
+			err = gpio_in_register_notifier(&ds->ignition_notifier);
+			if (err) {
+				pr_err("failure to register remount notifier [%d]\n", err);
+				err = -EINVAL;
+				break;
+			}
+		}
         ds->sdev.name = "dock";
         ds->sdev.print_state = dock_switch_print_state;
         err = switch_dev_register(&ds->sdev);
@@ -232,6 +383,7 @@ static int dock_switch_probe(struct platform_device *pdev)
             break;
         }
 
+        ds->pdev = dev;
         dev_set_drvdata(dev, ds);
         ds->sched_irq = SWITCH_DOCK | SWITCH_IGN;
         pr_notice("sched reason[%u]\n", ds->sched_irq);
@@ -341,6 +493,7 @@ static const struct dev_pm_ops dock_switch_pm_ops = {
 
 static struct of_device_id dock_switch_match[] = {
 	{ .compatible = "treq5,dock-switch", },
+	{ .compatible = "treqr5,dock-switch", },
 	{},
 };
 

@@ -126,6 +126,7 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&usbid_default>;
 		qcom,hsusb-otg-mode = <3>;
+		qcom,hsusb-otg-lpm-on-dev-suspend;
 	};		
 	
 	i2c@78b6000 { /* BLSP1 QUP2 */
@@ -548,6 +549,7 @@
 
 &mdss_dsi0 {
 	qcom,dsi-pref-prim-pan = <&dsi_h8394f_dt720128055_hd_video>;
+/*	qcom,dsi-pref-prim-pan = <&dsi_h8394d_txd_innolux5p5_hd_vid>;*/
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
@@ -593,10 +595,10 @@
 
 / {
 	mtp_batterydata: qcom,battery-data {
-		qcom,rpull-up-kohm = <100>;
+		qcom,rpull-up-kohm = <10>;
 		qcom,vref-batt-therm = <1800000>;
 
-		#include "batterydata-a3001-1850mah.dtsi"
+		#include "batterydata-a3001-2000mah.dtsi"
 	};
 };
 

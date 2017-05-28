@@ -28,6 +28,7 @@ struct vgpio_bank {
 	struct mutex lock;
 #endif
 };
+unsigned long g_gpio;
 
 
 #ifdef VGPIO_USE_SPINLOCK
@@ -65,7 +66,7 @@ static void gpio_in_notify(unsigned long reason, void *arg)
     unsigned long flags;
 
     raw_spin_lock_irqsave(&gpio_in_chain_lock, flags);
-    raw_notifier_call_chain(&gpio_in_chain, reason, 0);
+    raw_notifier_call_chain(&gpio_in_chain, reason, arg);
     raw_spin_unlock_irqrestore(&gpio_in_chain_lock, flags);
 }
 
@@ -220,7 +221,8 @@ static ssize_t virt_gpio_chr_write(struct file * file, const char __user * buf,
    	if(val)
 	{
 	    pr_err("gpio_in_notify %d\n", val);
-	    gpio_in_notify(val, 0);
+	    g_gpio = val;
+	    gpio_in_notify(1, &g_gpio);
 	}
 	return count;
 }
@@ -380,6 +382,8 @@ static int __init virtual_gpio_init(void)
 
 	gpiochip_add(&dev->gpiochip_in);
 	pr_debug("in base %d\n", dev->gpiochip_in.base);
+
+    gpio_in_notify(0, 0);
 
 	return 0;
 }
