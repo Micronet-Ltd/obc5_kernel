@@ -3576,13 +3576,13 @@ bool msm_bam_device_lpm_ok(enum usb_ctrl bam_type)
 		info[bam_type].lpm_wait_pipes) {
 		info[bam_type].pending_lpm = 1;
 		spin_unlock(&usb_bam_ipa_handshake_info_lock);
-		pr_info("%s: Scheduling LPM for later\n", __func__);
+		pr_notice("%s: Scheduling LPM for later\n", __func__);
 		return 0;
 	} else {
 		info[bam_type].pending_lpm = 0;
 		info[bam_type].in_lpm = true;
 		spin_unlock(&usb_bam_ipa_handshake_info_lock);
-		pr_info("%s: Going to LPM now\n", __func__);
+		pr_notice("%s: Going to LPM now\n", __func__);
 		return 1;
 	}
 }

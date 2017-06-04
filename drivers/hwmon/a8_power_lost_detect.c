@@ -89,6 +89,10 @@ struct a8_power_lost_detect_info {
 #endif
     int suspended;
     int resumed;
+    int ign_active_pin;
+    int ign_active_lvl;
+    int ign_change_irq;
+    struct delayed_work ign_change_work;
 };
 
 static ssize_t a8_power_lost_show_name(struct device *dev, struct device_attribute *attr, char *buf)
@@ -510,6 +514,25 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
 #endif
 }
 
+static irqreturn_t a8_power_ign_change_handler(int irq, void *irq_data)
+{
+	struct a8_power_lost_detect_info *pwrl = irq_data;
+
+	disable_irq_nosync(pwrl->ign_change_irq);
+
+    pr_notice("ign is change %lld\n", ktime_to_ms(ktime_get()));
+#if 0
+    spin_lock_irqsave(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+    pwrl->pwr_lost_timer = ktime_to_ms(ktime_get());
+    spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
+
+    if (!pwrl->suspended) {
+        schedule_delayed_work(&pwrl->pwr_lost_work, 0); 
+    }
+#endif
+	return IRQ_HANDLED;
+}
+
 static irqreturn_t a8_power_lost_detect_handler(int irq, void *irq_data)
 {
 	struct a8_power_lost_detect_info *pwrl = irq_data;
@@ -641,6 +664,14 @@ static int a8_power_lost_detect_probe(struct platform_device *pdev)
         }
         pwrl->pwr_lost_pin = val;
 
+        val = of_get_named_gpio_flags(np, "qcom,irq-ign-gpio", 0, (enum of_gpio_flags *)&pwrl->ign_active_lvl);
+        if (gpio_is_valid(val)) {
+            pr_notice("ignition detect pin %d\n", val);
+            pwrl->ign_active_pin = val;
+        } else {
+            pwrl->ign_active_pin = -1;
+        }
+
         err = of_property_read_u32(np, "a8,pwr-lost-level", &val); 
         if (err < 0) {
             val = 1;
@@ -751,6 +782,38 @@ static int a8_power_lost_detect_probe(struct platform_device *pdev)
         pwrl->resumed = 1;
 
         schedule_delayed_work(&pwrl->pwr_lost_work, (pwrl->pwr_lost_off_delay)?msecs_to_jiffies(pwrl->pwr_lost_off_delay): 0);
+
+        if (gpio_is_valid(pwrl->ign_active_pin)) {
+            err = devm_gpio_request(dev, pwrl->ign_active_pin, "ign-detector-state");
+            if (err < 0) {
+                pr_err("failure to request the gpio[%d]\n", pwrl->ign_active_pin);
+                break;
+            }
+            err = gpio_direction_input(pwrl->ign_active_pin);
+            if (err < 0) {
+                pr_err("failure to set direction of the gpio[%d]\n", pwrl->ign_active_pin);
+                break;
+            }
+            gpio_export(pwrl->ign_active_pin, 0);
+            pwrl->ign_change_irq = gpio_to_irq(pwrl->ign_active_pin);
+            if (pwrl->ign_change_irq < 0) {
+                pr_err("failure to request gpio[%d] irq\n", pwrl->ign_active_pin);
+            } else {
+                err = devm_request_irq(dev, pwrl->ign_change_irq, a8_power_ign_change_handler,
+                                       IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+                                       pdev->name, pwrl);
+                if (!err) {
+                    disable_irq_nosync(pwrl->ign_active_pin);
+                } else {
+                    pr_err("failure to request irq[%d] irq\n", pwrl->ign_active_pin);
+                }
+            }
+            // Vladimir
+            // TODO: MT5 ignition handler
+            //INIT_DELAYED_WORK(&pwrl->ign_change_work, a8_power_ign_change_work);
+            //schedule_delayed_work(&pwrl->pwr_lost_work, (pwrl->pwr_lost_off_delay)?msecs_to_jiffies(pwrl->pwr_lost_off_delay): 0);
+        }
+
         pwrl->sys_ready = 1;
 
 		pr_notice("power lost detector registered (%d, %d)\n", pwrl->pwr_lost_pin, pwrl->pwr_lost_irq);
