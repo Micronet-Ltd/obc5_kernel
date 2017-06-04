@@ -24,6 +24,8 @@
 * obj-$(CONFIG_PN544)+= pn544.o
 */
 
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/fs.h>
@@ -68,6 +70,8 @@ struct pn544_dev
 	unsigned int clkreq_gpio;
 	struct	clk		*s_clk;
 	bool			clk_run;
+    unsigned int ulpm;
+//    unsigned long open;
 };
 
 static void pn544_disable_irq(struct pn544_dev *pn544_dev)
@@ -206,10 +210,34 @@ static int pn544_dev_open(struct inode *inode, struct file *filp)
 	
 	filp->private_data = pn544_dev;
 
-	pr_debug("[pn547]%s : %d,%d\n", __func__, imajor(inode), iminor(inode));
+//    if(test_and_set_bit(1, &pn544_dev->open))
+//        return -EPERM;
+
+	pr_notice("%d,%d\n", imajor(inode), iminor(inode));
 
 	return 0;
 }
+
+static int pn544_dev_release(struct inode *inode, struct file *filp)
+{
+    struct pn544_dev *pn544_dev = container_of(filp->private_data, struct pn544_dev, pn544_device);
+
+//	clear_bit(1, &pn544_dev->open);
+//    pr_notice("\n");
+
+    if (gpio_is_valid(pn544_dev->firm_gpio)) {
+        gpio_set_value(pn544_dev->firm_gpio, 0); 
+    }
+
+    if (gpio_is_valid(pn544_dev->ven_gpio)) {
+        gpio_set_value(pn544_dev->ven_gpio, 0);
+    }
+
+    msleep(50);
+
+	return 0;
+}
+
 
 static long pn544_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
@@ -224,7 +252,7 @@ static long pn544_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 			/* 
 			power on with firmware download (requires hw reset)
 			 */
-			pr_debug("[pn547]%s power on with firmware pn544_dev->ven_gpio = %d \n", __func__, pn544_dev->ven_gpio);
+//			pr_notice("power on with firmware pn544_dev->ven_gpio = %d \n", pn544_dev->ven_gpio);
 			gpio_set_value(pn544_dev->ven_gpio, 1);
 			gpio_set_value(pn544_dev->firm_gpio, 1);
 			msleep(10);
@@ -232,22 +260,25 @@ static long pn544_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 			msleep(50);
 			gpio_set_value(pn544_dev->ven_gpio, 1);
 			msleep(150);
+            pn544_dev->ulpm = 1;
 		} 
 		else if (arg == 1) 
 		{
 			/* power on */
-			pr_debug("[pn547]%s power on pn544_dev->ven_gpio = %d \n", __func__, pn544_dev->ven_gpio);
+//			pr_notice("power on pn544_dev->ven_gpio = %d \n", pn544_dev->ven_gpio);
 			gpio_set_value(pn544_dev->firm_gpio, 0);
 			gpio_set_value(pn544_dev->ven_gpio, 1);
 			msleep(50);
+            pn544_dev->ulpm = 1;
 		} 
 		else  if (arg == 0) 
 		{
 			/* power off */
-			pr_debug("[pn547]%s power off pn544_dev->ven_gpio =%d \n", __func__, pn544_dev->ven_gpio);
+//			pr_notice("power off pn544_dev->ven_gpio =%d \n", pn544_dev->ven_gpio);
 			gpio_set_value(pn544_dev->firm_gpio, 0);
 			gpio_set_value(pn544_dev->ven_gpio, 0);
 			msleep(50);
+            pn544_dev->ulpm = 0;
 			
 		} else {
 			pr_err("[pn547]%s bad arg %lu\n", __func__, arg);
@@ -270,6 +301,7 @@ static const struct file_operations pn544_dev_fops =
 	.write	= pn544_dev_write,
 	.open	= pn544_dev_open,
 	.unlocked_ioctl = pn544_dev_ioctl,
+    .release = pn544_dev_release,
 };
 static int nfc_parse_dt(struct device *dev,
 			struct pn544_i2c_platform_data *pdata)
@@ -294,7 +326,13 @@ static int nfc_parse_dt(struct device *dev,
 	pr_debug("[pn547] qcom,clk-src = %s\n",pdata->clk_src_name);
 	pdata->clkreq_gpio = of_get_named_gpio(np, "qcom,clk-gpio", 0);
 	pr_debug("[pn547] qcom,clk-gpio = %d\n",pdata->clkreq_gpio);
-	if (rc)
+
+    pr_notice("ulpm gpio: %u\n", pdata->ven_gpio);
+    pr_notice("irq gpio: %u\n", pdata->irq_gpio);
+    pr_notice("firm req gpio: %u\n", pdata->firm_gpio);
+    pr_notice("%s: %u\n", pdata->clk_src_name, pdata->clkreq_gpio);
+
+    if (rc)
 		return -EINVAL;
 	return rc;
 }
@@ -337,11 +375,11 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 	//IRQ 
 	pr_debug("[pn547] start request platform_data->irq_gpio = %d\n",platform_data->irq_gpio);
 	ret = gpio_request(platform_data->irq_gpio, "nfc_int");
-	if (ret)
-	{
+	if (ret) {
 		pr_err("gpio_nfc_int request error\n");
 		return  -ENODEV;
 	}
+    gpio_export(platform_data->irq_gpio, 0);
 	ret = gpio_direction_input(platform_data->irq_gpio);
 	if (ret) {
 		pr_err("set_direction for irq gpio failed\n");
@@ -351,11 +389,11 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 	//VEN
 	pr_debug("[pn547] start request platform_data->ven_gpio = %d\n",platform_data->ven_gpio);
 	ret = gpio_request(platform_data->ven_gpio, "nfc_ven");
-	if (ret)
-	{
+	if (ret) {
 		pr_err("gpio_nfc_ven request error\n");
 		return  -ENODEV;
 	}
+    gpio_export(platform_data->ven_gpio, 0);
 	ret = gpio_direction_output(platform_data->ven_gpio, 0);
 	if (ret) {
 		pr_err("set_direction for ven gpio failed\n");
@@ -364,11 +402,11 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 	//FIRM
 	pr_debug("[pn547] start request platform_data->firm_gpio = %d\n",platform_data->firm_gpio);
 	ret = gpio_request(platform_data->firm_gpio, "nfc_firm");
-	if (ret)
-	{
+	if (ret) {
 		pr_err("gpio_nfc_firm request error\n");	
 		return  -ENODEV;
 	}
+    gpio_export(platform_data->firm_gpio, 0);
 	ret = gpio_direction_output(platform_data->firm_gpio, 0);
 	if (ret) {
 		pr_err("set_direction for firm gpio failed\n");
@@ -385,8 +423,7 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 	}
 	
 	//clk get
-	pn544_dev->s_clk  =
-			clk_get(&client->dev, "ref_clk");
+	pn544_dev->s_clk  = clk_get(&client->dev, "ref_clk");
 	if (pn544_dev->s_clk == NULL){
 		printk("[pn547] get clk fail\n");
 		goto err_exit;
@@ -437,8 +474,7 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 	pn544_dev->pn544_device.fops = &pn544_dev_fops;
 
 	ret = misc_register(&pn544_dev->pn544_device);	
-	if (ret) 
-	{
+	if (ret) {
 		pr_err("%s : misc_register failed\n", __FILE__);
 		goto err_misc_register;
 	}
@@ -446,13 +482,11 @@ static int pn544_probe(struct i2c_client *client, const struct i2c_device_id *id
 	/* request irq.  the irq is set whenever the chip has data available
 	 * for reading.  it is cleared when all data has been read.
 	 */
-	pr_info("%s : requesting IRQ %d\n", __func__, platform_data->irq_gpio);
-	pr_info("%s : client->name %s\n", __func__, client->name);
+	pr_notice("%s requesting IRQ %d\n", client->name, platform_data->irq_gpio);
 	pn544_dev->irq_enabled = true;
 	irq = gpio_to_irq(platform_data->irq_gpio);
 	ret = request_threaded_irq(irq,NULL,pn544_dev_irq_handler, IRQF_TRIGGER_RISING| IRQF_ONESHOT, client->name, pn544_dev);
-	if (ret) 
-	{
+	if (ret) {
 		dev_err(&client->dev, "request_irq failed\n");
 		goto err_request_irq_failed;
 	}
@@ -509,6 +543,39 @@ static const struct of_device_id pn544_of_match[] = {
 	{ },
 };
 
+static int pn544_suspend(struct device *device)
+{
+	struct i2c_client *client = to_i2c_client(device);
+    struct pn544_dev *pn544_dev = i2c_get_clientdata(client);
+
+    pr_notice("\n");
+
+    if (pn544_dev->ulpm) {
+        if (gpio_is_valid(pn544_dev->firm_gpio)) {
+            gpio_set_value(pn544_dev->firm_gpio, 0); 
+        }
+
+        if (gpio_is_valid(pn544_dev->ven_gpio)) {
+            gpio_set_value(pn544_dev->ven_gpio, 0);
+        }
+    }
+
+	return 0;
+}
+
+static int pn544_resume(struct device *device)
+{
+//    struct i2c_client *client = to_i2c_client(device);
+
+    pr_notice("\n");
+
+    return 0;
+}
+
+static const struct dev_pm_ops pn544_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(pn544_suspend, pn544_resume)
+};
+
 static struct i2c_driver pn544_driver = {
 	.id_table	= pn544_id,
 	.probe		= pn544_probe,
@@ -518,6 +585,7 @@ static struct i2c_driver pn544_driver = {
 		.owner	= THIS_MODULE,
 		.name	= "pn544",
 		.of_match_table = pn544_of_match,
+        .pm = &pn544_pm_ops,
 	},
 };
 

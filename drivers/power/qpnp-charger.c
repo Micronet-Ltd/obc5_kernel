@@ -501,12 +501,12 @@ static int ext_ovp_isns_enable(const char *val, const struct kernel_param *kp)
 		gpio_direction_output(
 						chip->ext_ovp_isns_gpio, 1);
 		chip->ext_ovp_ic_gpio_enabled = 1;
-		pr_debug("enabled GPIO\n");
+		pr_notice("enabled GPIO[%u]\n", chip->ext_ovp_isns_gpio);
 	} else {
 		gpio_direction_output(
 						chip->ext_ovp_isns_gpio, 0);
 		chip->ext_ovp_ic_gpio_enabled = 0;
-		pr_debug("disabled GPIO\n");
+		pr_notice("disabled GPIO[%u]\n", chip->ext_ovp_isns_gpio);
 	}
 
 	return rc;
@@ -2155,7 +2155,7 @@ qpnp_chg_chgr_chg_fastchg_irq_handler(int irq, void *_chip)
 
 			if (ext_ovp_isns_present &&
 					chip->ext_ovp_ic_gpio_enabled) {
-				pr_debug("EXT OVP IC ISNS enabled\n");
+				pr_notice("EXT OVP IC ISNS enabled\n");
 				gpio_direction_output(
 						chip->ext_ovp_isns_gpio, 1);
 			}
@@ -3405,7 +3405,7 @@ qpnp_chg_regulator_boost_enable(struct regulator_dev *rdev)
 	if (usb_present && (chip->flags & BOOST_FLASH_WA)) {
 
 		if (ext_ovp_isns_present && chip->ext_ovp_ic_gpio_enabled) {
-			pr_debug("EXT OVP IC ISNS disabled\n");
+			pr_notice("EXT OVP IC ISNS disabled\n");
 			gpio_direction_output(chip->ext_ovp_isns_gpio, 0);
 		}
 
@@ -3555,7 +3555,7 @@ qpnp_chg_regulator_boost_disable(struct regulator_dev *rdev)
 	}
 
 	if (ext_ovp_isns_present && chip->ext_ovp_ic_gpio_enabled) {
-		pr_debug("EXT OVP IC ISNS enable\n");
+		pr_notice("EXT OVP IC ISNS enable\n");
 		gpio_direction_output(chip->ext_ovp_isns_gpio, 1);
 	}
 
@@ -5371,6 +5371,7 @@ qpnp_charger_probe(struct spmi_device *spmi)
 
 	if (ext_ovp_isns_present)
 		chip->ext_ovp_ic_gpio_enabled = 0;
+    pr_notice("%s: gpio_%d[%d}\n", __func__, chip->ext_ovp_ic_gpio_enabled, ext_ovp_isns_present);
 
 	/*
 	 * Check if bat_if is set in DT and make sure VADC is present

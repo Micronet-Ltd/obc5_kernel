@@ -422,7 +422,7 @@
 		qcom,pipe-attr-ee;
 	};
 	
-	// by skj
+	/* by skj */
 	blsp1_uart1: serial@78af000 {
 		compatible = "qcom,msm-lsuart-v14";
 		reg = <0x78af000 0x200>;
@@ -1512,7 +1512,7 @@
 		qcom,bam-pipe-idx-prod = <9>;
 		qcom,master-id = <86>;
 	};
-    //add by jiao.shp for bl end
+    /* add by jiao.shp for bl end*/
 
 	i2c_4: i2c@78b8000 { /* BLSP1 QUP4 */
 		compatible = "qcom,i2c-msm-v2";

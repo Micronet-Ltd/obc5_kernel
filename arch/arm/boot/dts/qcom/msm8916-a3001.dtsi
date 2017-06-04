@@ -83,7 +83,7 @@
 		};
 	};
 
-	/* by skj */
+	/* by skj*/
 	i2c@78ba000 { /* BLSP1 QUP6 */
 		nfc@2b {
 			compatible = "nfc,pn544";
@@ -105,7 +105,7 @@
 			};
 	};
 
-	/* by skj */
+	/* by skj*/
 	obc_otg_vreg:usbotgobc { 
 		compatible = "regulator-gpio";
 		regulator-name = "obc_otg_vreg";
@@ -129,106 +129,37 @@
 	};		
 	
 	i2c@78b6000 { /* BLSP1 QUP2 */
-/*
-		mpu6050@68 { 
-			compatible = "invn,mpu6050";
-			reg = <0x68>;
-			pinctrl-names = "mpu_default","mpu_sleep";
-			pinctrl-0 = <&mpu6050_default>;
-			pinctrl-1 = <&mpu6050_sleep>;
-			interrupt-parent = <&msm_gpio>;
-			interrupts = <115 0x2>;
+		kionix@e{
+			compatible = "kionix,kxtj9";
+			reg = <0x0e>;
 			vdd-supply = <&pm8916_l17>;
-			vlogic-supply = <&pm8916_l16>;
-			vi2c-supply = <&pm8916_l6>;
-			invn,gpio-int = <&msm_gpio 115 0x2>;
-			invn,place = "Portrait Down Back Side";
+			vio-supply = <&pm8916_l6>;
+			kionix,min-interval = <5>;
+			kionix,init-interval = <200>;
+			kionix,axis-map-x = <0>;
+			kionix,axis-map-y = <1>;
+			kionix,axis-map-z = <2>;
+			kionix,negate-x;
+	        kionix,negate-y;		
+			kionix,g-range = <2>;
+			kionix,res-12bit;
 		};
-
-		avago@39 { 
-			compatible = "avago,apds9900";
-			reg = <0x39>;
+		liteon@1e {
+			compatible = "liteon,ap321xx";
+			reg = <0x1e>;
 			pinctrl-names = "default","sleep";
-			pinctrl-0 = <&apds99xx_default>;
-			pinctrl-1 = <&apds99xx_sleep>;
+			pinctrl-0 = <&ap321xx_default>;
+			pinctrl-1 = <&ap321xx_sleep>;
+			qcom,irq-gpio = <&msm_gpio 113 0>;
 			interrupt-parent = <&msm_gpio>;
-			interrupts = <113 0x2002>;
+			interrupts = <113 0>;
+			liteon,ps-thdh = <200>; 			
+			liteon,ps-thdl = <160>;
+			liteon,ps-high = <160>; 			
+			liteon,ps-low = <120>;
 			vdd-supply = <&pm8916_l17>;
 			vio-supply = <&pm8916_l6>;
-			avago,irq-gpio = <&msm_gpio 113 0x2002>;
-			avago,ps-threshold = <600>;
-			avago,ps-hysteresis-threshold = <500>;
-			avago,ps-pulse = <8>;
-			avago,ps-pgain = <0>;
-			avago,als-B = <223>;
-			avago,als-C = <70>;
-			avago,als-D = <142>;
-			avago,ga-value = <48>;
 		};
-
-		akm@c {
-			compatible = "ak,ak8963";
-			reg = <0x0c>;
-			pinctrl-names = "ak8963_default", "ak8963_sleep";
-			pinctrl-0 = <&ak8963_default>;
-			pinctrl-1 = <&ak8963_sleep>;
-			interrupt-parent = <&msm_gpio>;
-			interrupts = <69 0x2>;
-			vdd-supply = <&pm8916_l17>;
-			vio-supply = <&pm8916_l6>;
-			ak,layout = <0x6>;
-			ak,auto-report;
-		};
-
-*/
-/* by shengweiguang begin */
-	kionix@e{
-		compatible = "kionix,kxtj9";
-		reg = <0x0e>;
-		vdd-supply = <&pm8916_l17>;
-		vio-supply = <&pm8916_l6>;
-		kionix,min-interval = <5>;
-		kionix,init-interval = <200>;
-		kionix,axis-map-x = <0>;
-		kionix,axis-map-y = <1>;
-		kionix,axis-map-z = <2>;
-		kionix,negate-x;
-        kionix,negate-y;		
-		kionix,g-range = <2>;
-		kionix,res-12bit;
-	};
-	liteon@1e {
-		compatible = "liteon,ap321xx";
-		reg = <0x1e>;
-		pinctrl-names = "default","sleep";
-		pinctrl-0 = <&ap321xx_default>;
-		pinctrl-1 = <&ap321xx_sleep>;
-		qcom,irq-gpio = <&msm_gpio 113 0>;
-		interrupt-parent = <&msm_gpio>;
-		interrupts = <113 0>;
-		liteon,ps-thdh = <200>; 			
-		liteon,ps-thdl = <160>;
-		liteon,ps-high = <160>; 			
-		liteon,ps-low = <120>;
-		vdd-supply = <&pm8916_l17>;
-		vio-supply = <&pm8916_l6>;
-	};
-/*	
-	mpu3050@68 {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			status = "okay";
-			reg = <0x68>;
-			compatible = "invn,mpu3050";
-			interrupt-parent = <&msm_gpio>;
-			interrupts = <118 0x2>;
-			vlogic-supply = <&pm8916_l6>;
-			vdd-supply = <&pm8916_l17>;
-			invn,gpio-int = <&msm_gpio 118 0x2>;
-			invn,gpio-en = <&msm_gpio 49 0x2>;
-			invn,poll-interval = <200>;
-	};
-*/
 	mpu6050@68 { 
 			compatible = "invn,mpu6050";
 			reg = <0x68>;
@@ -285,19 +216,6 @@
 		bosch,g-range = <3>;
 	};
 
-	/*rohm@39 {
-		compatible = "rohm,rpr0410";
-		reg = <0x39>;
-		qcom,irq-gpio = <&msm_gpio 113 0>;
-		interrupt-parent = <&msm_gpio>;
-		interrupts = <113 0>;
-		liteon,ps-thdh = <200>; 			
-		liteon,ps-thdl = <160>;
-		liteon,ps-high = <160>; 			
-		liteon,ps-low = <120>;
-		vdd-supply = <&pm8916_l17>;
-		vio-supply = <&pm8916_l6>;
-	};*/
 	
 	rohm@38 { /* Ambient light and proximity sensor */
 		compatible = "rohm,rpr0521c";
@@ -351,18 +269,17 @@
 			label = "green";
 			default-state = "off";
 			retain-state-suspended;
-		};	
+		};
 	};
 	watchdogpin {
 		compatible = "ehang,watchdog-pin";
-		pinctrl-names = "default";
+		pinctrl-names = "default", "watchdog_pin_sleep";
 		pinctrl-0 = <&obc_watchdog_pin>;		
+		pinctrl-1 = <&watchdog_pin_sleep>;
 		ehang,toggle-pin = <&msm_gpio 2 0>;
-		ehang,suspend-state-pin = <&msm_gpio 91 0>;
-		ehang,port-det-pin = <&msm_gpio 69 0>;
-		ehang,usb-switch-pin = <&msm_gpio 15 0>;
+		ehang,rf-kill-pin = <&msm_gpio 9 0>;
 		ehang,high-delay=<1000>;
-		ehang,low-delay=<5000>;
+		ehang,low-delay=<1000>;
 	};
 	sound {
 		compatible = "qcom,msm8x16-audio-codec";
@@ -437,17 +354,32 @@
 		qcom,ext-spk-amp-gpio = <&msm_gpio 16 0>;
 		qcom,hp-spk-switch-gpio = <&msm_gpio 3 0>;
 	};
+/*
 	a8_power_lost_hm {
 		compatible = "a8-hm-power-lost";
 		pinctrl-names = "default";
 		pinctrl-0 = <&power_lost_pin>;		
 		qcom,irq-gpio = <&msm_gpio 89 0x01>;
-		interrupt-names = "power_lost";
+		qcom,irq-ign-gpio = <&msm_gpio 69 0x01>;
+		interrupt-names = "power_lost", "ign_active";
 		interrupt-parent = <&msm_gpio>;
-		interrupts = <&msm_gpio 89 1>;
+		interrupts = <&msm_gpio 89 1>, <&msm_gpio 69 1>;
 		a8,wan-off-delay = <0>;
 		a8,wlan-off-delay = <0>;
-		a8,plat-off-delay = <2000>;
+		a8,plat-off-delay = <19000>;
+		status = "okay";
+	};
+*/
+	dock {
+		compatible = "treq5,dock-switch";
+		pinctrl-names = "default";
+		pinctrl-0 = <&switch_doc>;
+		treq5,dock-pin = <&msm_gpio 49 0x00>;
+		treq5,ign-pin = <&msm_gpio 69 0x00>;
+		treq5,usb-switch-pin = <&msm_gpio 15 0>;
+		interrupt-names = "docking", "ignition";
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <&msm_gpio 49 1>, <&msm_gpio 69 1>;
 		status = "okay";
 	};
 };

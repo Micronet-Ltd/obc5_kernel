@@ -650,6 +650,7 @@ static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 	if (!!chip->charger_disabled == !!disabled)
 		goto skip;
 
+    pr_notice("%s: %d\n", __func__, enable);
 	reg_val = !!disabled ? CHG_FORCE_BATT_ON : CHG_ENABLE;
 	rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,
 				CHG_EN_MASK, reg_val);
@@ -1672,6 +1673,7 @@ static int qpnp_lbc_parallel_charging_config(struct qpnp_lbc_chip *chip,
 
 	if (enable) {
 		/* Prevent sleep until charger is configured */
+        pr_notice("%s: enable charge\n", __func__);
 		chip->ichg_now = QPNP_LBC_IBATMAX_MIN;
 		qpnp_lbc_ibatmax_set(chip, chip->ichg_now);
 		qpnp_lbc_charger_enable(chip, PARALLEL, 1);
