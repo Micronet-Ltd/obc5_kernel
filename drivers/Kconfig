@@ -192,5 +192,6 @@ source "drivers/micronet/accel/Kconfig"
 
 source "drivers/micronet/suspend_timeout/Kconfig"
 
+source "drivers/micronet/one_wire/Kconfig"
 
 endmenu

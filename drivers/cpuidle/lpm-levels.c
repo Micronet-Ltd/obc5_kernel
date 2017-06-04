@@ -11,6 +11,8 @@
  *
  */
 
+#define pr_fmt(fmt) "%s %s: " fmt, KBUILD_MODNAME, __func__
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -862,6 +864,7 @@ static void register_cluster_lpm_stats(struct lpm_cluster *cl,
 
 static int lpm_suspend_prepare(void)
 {
+	pr_notice("\n");
 	suspend_in_progress = true;
 	msm_mpm_suspend_prepare();
 	lpm_stats_suspend_enter();
@@ -871,6 +874,7 @@ static int lpm_suspend_prepare(void)
 
 static void lpm_suspend_wake(void)
 {
+	pr_notice("\n");
 	suspend_in_progress = false;
 	msm_mpm_suspend_wake();
 	lpm_stats_suspend_exit();
@@ -884,6 +888,7 @@ static int lpm_suspend_enter(suspend_state_t state)
 	const struct cpumask *cpumask = get_cpu_mask(cpu);
 	int idx;
 
+	pr_notice("\n");
 	for (idx = lpm_cpu->nlevels - 1; idx >= 0; idx--) {
 		struct lpm_cpu_level *level = &lpm_cpu->levels[idx];
 

@@ -1566,12 +1566,12 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 	poff_sts = buf[0] | (buf[1] << 8);
 	index = ffs(poff_sts) - 1;
 	if (index >= ARRAY_SIZE(qpnp_poff_reason) || index < 0) {
-		dev_info(&pon->spmi->dev,
+		dev_notice(&pon->spmi->dev,
 				"PMIC@SID%d: Unknown power-off reason\n",
 				pon->spmi->sid);
 	} else {
 		pon->pon_power_off_reason = index;
-		dev_info(&pon->spmi->dev,
+		dev_notice(&pon->spmi->dev,
 				"PMIC@SID%d: Power-off reason: %s\n",
 				pon->spmi->sid,
 				qpnp_poff_reason[index]);
@@ -1579,9 +1579,11 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 
 	if (pon->pon_trigger_reason == PON_SMPL ||
 		pon->pon_power_off_reason == QPNP_POFF_REASON_UVLO) {
+        dev_notice(&pon->spmi->dev, "momentary power loss\n");
 		if (of_property_read_bool(spmi->dev.of_node,
 						"qcom,uvlo-panic"))
 			panic("An UVLO was occurred.");
+
 	}
 
 	/* program s3 debounce */
