@@ -1916,6 +1916,8 @@ static void msm_otg_notify_host_mode(struct msm_otg *motg, bool host_mode)
 				msleep(50);
 		}
 	} else {
+		pr_notice("[%d]\n", host_mode);
+
 		motg->host_mode = host_mode;
 		power_supply_changed(psy);
 	}
@@ -3381,7 +3383,7 @@ static void msm_otg_sm_work(struct work_struct *w)
 			otg->phy->state = OTG_STATE_A_IDLE;
 			work = 1;
 		} else if (test_bit(B_SESS_VLD, &motg->inputs)) {
-			pr_debug("b_sess_vld\n");
+			pr_notice("b_sess_vld %d[%d]\n", motg->chg_state, motg->chg_type);
 			msm_otg_dbg_log_event(&motg->phy, "B_SESS_VLD",
 					motg->inputs, otg->phy->state);
 			switch (motg->chg_state) {
@@ -3774,7 +3776,7 @@ static void msm_otg_sm_work(struct work_struct *w)
 			otg->phy->state = OTG_STATE_A_WAIT_VFALL;
 			msm_otg_start_timer(motg, TA_WAIT_VFALL, A_WAIT_VFALL);
 		} else if (test_bit(A_VBUS_VLD, &motg->inputs)) {
-			pr_debug("a_vbus_vld\n");
+			pr_notice("a_vbus_vld\n");
 			msm_otg_dbg_log_event(&motg->phy, "A_VBUS_VLD",
 					motg->inputs, otg->phy->state);
 			otg->phy->state = OTG_STATE_A_WAIT_BCON;

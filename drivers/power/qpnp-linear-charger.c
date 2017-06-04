@@ -633,12 +633,21 @@ static int qpnp_lbc_is_usb_chg_plugged_in(struct qpnp_lbc_chip *chip)
 	return (usbin_valid_rt_sts & USB_IN_VALID_MASK) ? 1 : 0;
 }
 
+static int get_prop_battery_voltage_now(struct qpnp_lbc_chip *chip);
 static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 					int enable)
 {
 	int disabled = chip->charger_disabled;
 	u8 reg_val;
 	int rc = 0;
+    union power_supply_propval full;// = qpnp_lbc_is_usb_chg_plugged_in(chip) && chip->chg_done;
+    int chg_done = qpnp_lbc_is_usb_chg_plugged_in(chip) && chip->chg_done;
+
+    if (chip->bms_psy) {
+        chip->bms_psy->get_property(chip->bms_psy, POWER_SUPPLY_PROP_VOLTAGE_OCV, &full); 
+    } else {
+        full.intval = get_prop_battery_voltage_now(chip);
+    }
 
 	pr_debug("reason=%d requested_enable=%d disabled_status=%d\n",
 					reason, enable, disabled);
@@ -647,10 +656,12 @@ static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 	else
 		disabled |= reason;
 
-	if (!!chip->charger_disabled == !!disabled)
+	if (!!chip->charger_disabled == !!disabled) {
 		goto skip;
+    }
 
-	reg_val = !!disabled ? CHG_FORCE_BATT_ON : CHG_ENABLE;
+	reg_val = (!!disabled || (full.intval > 4100000 /*QPNP_LBC_VBAT_MIN_MV*/ && chg_done)) ? CHG_FORCE_BATT_ON : CHG_ENABLE;
+    reg_val = (!!disabled) ? CHG_FORCE_BATT_ON : CHG_ENABLE;
 	rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,
 				CHG_EN_MASK, reg_val);
 	if (rc) {
@@ -661,7 +672,7 @@ static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 skip:
 	chip->charger_disabled = disabled;
     if (reason & THERMAL) {
-        pr_notice("%s: [%x, %d]\n", __func__, chip->charger_disabled, enable); 
+        pr_notice("[%x, %d]\n", chip->charger_disabled, enable); 
     }
 
     return rc;
@@ -1299,30 +1310,32 @@ static void qpnp_batt_external_power_changed(struct power_supply *psy)
 		chip->bms_psy = power_supply_get_by_name("bms");
 
 	if (qpnp_lbc_is_usb_chg_plugged_in(chip)) {
-		chip->usb_psy->get_property(chip->usb_psy,
-				POWER_SUPPLY_PROP_CURRENT_MAX, &ret);
-		current_ma = ret.intval / 1000;
+        chip->usb_psy->get_property(chip->usb_psy, POWER_SUPPLY_PROP_SCOPE, &ret);
+        if (POWER_SUPPLY_SCOPE_DEVICE == ret.intval) {
+            chip->usb_psy->get_property(chip->usb_psy, POWER_SUPPLY_PROP_CURRENT_MAX, &ret);
+            current_ma = ret.intval / 1000;
 
-		// by skj
-		if(current_ma<500)
-			current_ma=500;
-		
-		if (current_ma == chip->prev_max_ma)
-			goto skip_current_config;
+            // by skj
+            if(current_ma<500)
+                current_ma=500;
+            
+            if (current_ma == chip->prev_max_ma)
+                goto skip_current_config;
 
-		/* Disable charger in case of reset or suspend event */
-		if (current_ma <= 2 && !chip->cfg_use_fake_battery
-				&& get_prop_batt_present(chip)) {
-			qpnp_lbc_charger_enable(chip, CURRENT, 0);
-			chip->usb_psy_ma = QPNP_CHG_I_MAX_MIN_90;
-			qpnp_lbc_set_appropriate_current(chip);
-		} else {
-			chip->usb_psy_ma = current_ma;
-			qpnp_lbc_set_appropriate_current(chip);
-            if (!(chip->bat_is_warm || chip->bat_is_cool)) {
-                qpnp_lbc_charger_enable(chip, CURRENT, 1);
+            /* Disable charger in case of reset or suspend event */
+            if (current_ma <= 2 && !chip->cfg_use_fake_battery
+                    && get_prop_batt_present(chip)) {
+                qpnp_lbc_charger_enable(chip, CURRENT, 0);
+                chip->usb_psy_ma = QPNP_CHG_I_MAX_MIN_90;
+                qpnp_lbc_set_appropriate_current(chip);
+            } else {
+                chip->usb_psy_ma = current_ma;
+                qpnp_lbc_set_appropriate_current(chip);
+                if (!(chip->bat_is_warm || chip->bat_is_cool)) {
+                    qpnp_lbc_charger_enable(chip, CURRENT, 1);
+                }
             }
-		}
+        }
 	}
 
 skip_current_config:
@@ -1512,7 +1525,9 @@ static int qpnp_batt_power_set_property(struct power_supply *psy,
 			if (chip->cfg_float_charge)
 				break;
 			/* Disable charging */
-            pr_notice("battery full\n");
+            if (!chip->chg_done) {
+                pr_notice("battery full\n"); 
+            }
 			rc = qpnp_lbc_charger_enable(chip, SOC, 0);
 			if (rc)
 				pr_err("Failed to disable charging rc=%d\n",
@@ -1540,7 +1555,7 @@ static int qpnp_batt_power_set_property(struct power_supply *psy,
 		case POWER_SUPPLY_STATUS_CHARGING:
             if (!(chip->bat_is_warm || chip->bat_is_cool)) {
     			chip->chg_done = false;
-    			pr_debug("resuming charging by bms\n");
+    			pr_notice("resuming charging by bms\n");
     			if (!chip->cfg_disable_vbatdet_based_recharge)
     				qpnp_lbc_vbatdet_override(chip, OVERRIDE_0);
 
@@ -2420,6 +2435,7 @@ static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
 			 * irrespective of battery SOC above resume_soc.
 			 */
             if (!(chip->bat_is_warm || chip->bat_is_cool)) {
+//                pr_notice("resuming charging by Vbat detect\n");
                 qpnp_lbc_charger_enable(chip, SOC, 1);
             }
 		}
@@ -2601,6 +2617,7 @@ static irqreturn_t qpnp_lbc_vbatdet_lo_irq_handler(int irq, void *_chip)
 	 * time to resume charging.
 	 */
 //    if (!chip->bat_is_warm) {
+        pr_notice("resuming charging Vbat low\n");
     	rc = qpnp_lbc_charger_enable(chip, SOC, 1);
     	if (rc)
     		pr_err("Failed to enable charging\n");

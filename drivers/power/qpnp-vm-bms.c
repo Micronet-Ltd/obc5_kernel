@@ -1419,7 +1419,7 @@ static int report_eoc(struct qpnp_bms_chip *chip)
 		if (rc) {
 			pr_err("Unable to get battery 'STATUS' rc=%d\n", rc);
 		} else if (ret.intval != POWER_SUPPLY_STATUS_FULL) {
-			pr_debug("Report EOC to charger\n");
+			pr_notice("Report EOC to charger\n");
 			ret.intval = POWER_SUPPLY_STATUS_FULL;
 			rc = chip->batt_psy->set_property(chip->batt_psy,
 					POWER_SUPPLY_PROP_STATUS, &ret);
@@ -1450,7 +1450,11 @@ static void check_recharge_condition(struct qpnp_bms_chip *chip)
 		return;
 	}
 
-	/* Report recharge to charger for SOC based resume of charging */
+    pr_notice("soc dropped below resume_soc soc=%d resume_soc=%d, restart charging\n",
+            chip->last_soc,
+            chip->dt.cfg_soc_resume_limit);
+
+    /* Report recharge to charger for SOC based resume of charging */
 	if ((status != POWER_SUPPLY_STATUS_CHARGING) && chip->eoc_reported) {
 		ret.intval = POWER_SUPPLY_STATUS_CHARGING;
 		rc = chip->batt_psy->set_property(chip->batt_psy,
@@ -1458,7 +1462,7 @@ static void check_recharge_condition(struct qpnp_bms_chip *chip)
 		if (rc < 0) {
 			pr_err("Unable to set battery property rc=%d\n", rc);
 		} else {
-			pr_info("soc dropped below resume_soc soc=%d resume_soc=%d, restart charging\n",
+			pr_debug("soc dropped below resume_soc soc=%d resume_soc=%d, restart charging\n",
 					chip->last_soc,
 					chip->dt.cfg_soc_resume_limit);
 			chip->eoc_reported = false;
@@ -1519,7 +1523,7 @@ static void check_eoc_condition(struct qpnp_bms_chip *chip)
 		}
 	} else {
 		if (chip->last_ocv_uv >= chip->ocv_at_100) {
-			pr_debug("new_ocv(%d) > ocv_at_100(%d) maintaining SOC to 100\n",
+			pr_notice("new_ocv(%d) > ocv_at_100(%d) maintaining SOC to 100\n",
 					chip->last_ocv_uv, chip->ocv_at_100);
 			chip->ocv_at_100 = chip->last_ocv_uv;
 			chip->last_soc = 100;
@@ -1538,7 +1542,7 @@ static void check_eoc_condition(struct qpnp_bms_chip *chip)
 				chip->batt_psy->set_property(chip->batt_psy,
 					POWER_SUPPLY_PROP_STATUS, &ret);
 			}
-			pr_debug("SOC dropped (%d) discarding ocv_at_100\n",
+			pr_notice("SOC dropped (%d) discarding ocv_at_100\n",
 							chip->last_soc);
 			chip->ocv_at_100 = -EINVAL;
 		}
@@ -1763,7 +1767,7 @@ static void btm_notify_vbat(enum qpnp_tm_state state, void *ctx)
 	pr_debug("vbat is at %d, state is at %d\n", vbat_uv, state);
 
 	if (state == ADC_TM_LOW_STATE) {
-		pr_debug("low voltage btm notification triggered\n");
+		pr_notice("low voltage btm notification triggered\n");
 		if (vbat_uv <= (chip->vbat_monitor_params.low_thr
 					+ VBATT_ERROR_MARGIN)) {
 			if (!bms_wake_active(&chip->vbms_lv_wake_source))
@@ -2457,16 +2461,16 @@ static void reported_soc_check_status(struct qpnp_bms_chip *chip)
 		chip->reported_soc_high_current = true;
 		chip->charger_removed_since_full = true;
 		chip->charger_reinserted = false;
-		pr_debug("reported_soc enters high current mode\n");
+		pr_notice("enters high current mode\n");
 		return;
 	}
 	if (present && chip->charger_removed_since_full) {
 		chip->charger_reinserted = true;
-		pr_debug("reported_soc: charger reinserted\n");
+		pr_notice("charger reinserted\n");
 	}
 	if (!present && chip->charger_removed_since_full) {
 		chip->charger_reinserted = false;
-		pr_debug("reported_soc: charger removed again\n");
+		pr_notice("charger removed again\n");
 	}
 }
 
