@@ -1527,7 +1527,8 @@ static int qpnp_batt_power_set_property(struct power_supply *psy,
 			/* Disable charging */
             if (!chip->chg_done) {
                 pr_notice("battery full\n"); 
-            }
+            } else
+                break;
 			rc = qpnp_lbc_charger_enable(chip, SOC, 0);
 			if (rc)
 				pr_err("Failed to disable charging rc=%d\n",
