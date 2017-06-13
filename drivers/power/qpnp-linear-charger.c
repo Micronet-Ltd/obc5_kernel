@@ -633,21 +633,12 @@ static int qpnp_lbc_is_usb_chg_plugged_in(struct qpnp_lbc_chip *chip)
 	return (usbin_valid_rt_sts & USB_IN_VALID_MASK) ? 1 : 0;
 }
 
-static int get_prop_battery_voltage_now(struct qpnp_lbc_chip *chip);
 static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 					int enable)
 {
 	int disabled = chip->charger_disabled;
 	u8 reg_val;
 	int rc = 0;
-    union power_supply_propval full;// = qpnp_lbc_is_usb_chg_plugged_in(chip) && chip->chg_done;
-    int chg_done = qpnp_lbc_is_usb_chg_plugged_in(chip) && chip->chg_done;
-
-    if (chip->bms_psy) {
-        chip->bms_psy->get_property(chip->bms_psy, POWER_SUPPLY_PROP_VOLTAGE_OCV, &full); 
-    } else {
-        full.intval = get_prop_battery_voltage_now(chip);
-    }
 
 	pr_debug("reason=%d requested_enable=%d disabled_status=%d\n",
 					reason, enable, disabled);
@@ -660,7 +651,6 @@ static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 		goto skip;
     }
 
-	reg_val = (!!disabled || (full.intval > 4100000 /*QPNP_LBC_VBAT_MIN_MV*/ && chg_done)) ? CHG_FORCE_BATT_ON : CHG_ENABLE;
     reg_val = (!!disabled) ? CHG_FORCE_BATT_ON : CHG_ENABLE;
 	rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,
 				CHG_EN_MASK, reg_val);
@@ -1403,7 +1393,7 @@ out:
 }
 
 #define MIN_COOL_TEMP		-200
-#define MAX_WARM_TEMP		500 //1000
+#define MAX_WARM_TEMP		450 //1000
 #define HYSTERISIS_DECIDEGC	20
 
 static int qpnp_lbc_configure_jeita(struct qpnp_lbc_chip *chip,
@@ -1527,14 +1517,16 @@ static int qpnp_batt_power_set_property(struct power_supply *psy,
 			/* Disable charging */
             if (!chip->chg_done) {
                 pr_notice("battery full\n"); 
-            } else
-                break;
+            }
+
 			rc = qpnp_lbc_charger_enable(chip, SOC, 0);
 			if (rc)
 				pr_err("Failed to disable charging rc=%d\n",
 						rc);
-			else
-				chip->chg_done = true;
+            else if (chip->chg_done) {
+				break;
+            } else
+				chip->chg_done = true; 
 
 			/*
 			 * Enable VBAT_DET based charging:
@@ -2618,7 +2610,7 @@ static irqreturn_t qpnp_lbc_vbatdet_lo_irq_handler(int irq, void *_chip)
 	 * time to resume charging.
 	 */
 //    if (!chip->bat_is_warm) {
-        pr_notice("resuming charging Vbat low\n");
+//        pr_notice("resuming charging Vbat low\n");
     	rc = qpnp_lbc_charger_enable(chip, SOC, 1);
     	if (rc)
     		pr_err("Failed to enable charging\n");

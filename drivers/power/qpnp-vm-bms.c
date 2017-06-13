@@ -1446,13 +1446,9 @@ static void check_recharge_condition(struct qpnp_bms_chip *chip)
 		return;
 
 	if (status == POWER_SUPPLY_STATUS_UNKNOWN) {
-		pr_debug("Unable to read battery status\n");
+		pr_err("Unable to read battery status\n");
 		return;
 	}
-
-    pr_notice("soc dropped below resume_soc soc=%d resume_soc=%d, restart charging\n",
-            chip->last_soc,
-            chip->dt.cfg_soc_resume_limit);
 
     /* Report recharge to charger for SOC based resume of charging */
 	if ((status != POWER_SUPPLY_STATUS_CHARGING) && chip->eoc_reported) {
@@ -1462,7 +1458,7 @@ static void check_recharge_condition(struct qpnp_bms_chip *chip)
 		if (rc < 0) {
 			pr_err("Unable to set battery property rc=%d\n", rc);
 		} else {
-			pr_debug("soc dropped below resume_soc soc=%d resume_soc=%d, restart charging\n",
+			pr_info("soc dropped below resume_soc soc=%d resume_soc=%d, restart charging\n",
 					chip->last_soc,
 					chip->dt.cfg_soc_resume_limit);
 			chip->eoc_reported = false;
@@ -1523,7 +1519,7 @@ static void check_eoc_condition(struct qpnp_bms_chip *chip)
 		}
 	} else {
 		if (chip->last_ocv_uv >= chip->ocv_at_100) {
-			pr_notice("new_ocv(%d) > ocv_at_100(%d) maintaining SOC to 100\n",
+			pr_debug("new_ocv(%d) > ocv_at_100(%d) maintaining SOC to 100\n",
 					chip->last_ocv_uv, chip->ocv_at_100);
 			chip->ocv_at_100 = chip->last_ocv_uv;
 			chip->last_soc = 100;
@@ -1767,7 +1763,7 @@ static void btm_notify_vbat(enum qpnp_tm_state state, void *ctx)
 	pr_debug("vbat is at %d, state is at %d\n", vbat_uv, state);
 
 	if (state == ADC_TM_LOW_STATE) {
-		pr_notice("low voltage btm notification triggered\n");
+		pr_debug("low voltage btm notification triggered\n");
 		if (vbat_uv <= (chip->vbat_monitor_params.low_thr
 					+ VBATT_ERROR_MARGIN)) {
 			if (!bms_wake_active(&chip->vbms_lv_wake_source))
@@ -1869,11 +1865,11 @@ static void cv_voltage_check(struct qpnp_bms_chip *chip, int vbat_uv)
 		if ((vbat_uv < (chip->dt.cfg_max_voltage_uv -
 				VBATT_ERROR_MARGIN + CV_DROP_MARGIN))
 			&& !is_battery_taper_charging(chip)) {
-            pr_notice("%duV relax\n", vbat_uv);
+            pr_debug("%duV relax\n", vbat_uv);
 			chip->in_cv_state = false;
 			bms_relax(&chip->vbms_cv_wake_source);
 		} else if (!is_battery_charging(chip)) {
-			pr_notice("charging stopped, relax\n");
+			pr_debug("charging stopped, relax\n");
 			chip->in_cv_state = false;
 			bms_relax(&chip->vbms_cv_wake_source);
 		}
@@ -1882,7 +1878,7 @@ static void cv_voltage_check(struct qpnp_bms_chip *chip, int vbat_uv)
 			&& ((vbat_uv > (chip->dt.cfg_max_voltage_uv -
 					VBATT_ERROR_MARGIN))
 				|| is_battery_taper_charging(chip))) {
-		pr_notice("%duV awake\n", vbat_uv);
+		pr_debug("%duV awake\n", vbat_uv);
 		chip->in_cv_state = true;
 		bms_stay_awake(&chip->vbms_cv_wake_source);
 	}
@@ -2461,16 +2457,16 @@ static void reported_soc_check_status(struct qpnp_bms_chip *chip)
 		chip->reported_soc_high_current = true;
 		chip->charger_removed_since_full = true;
 		chip->charger_reinserted = false;
-		pr_notice("enters high current mode\n");
+		pr_debug("enters high current mode\n");
 		return;
 	}
 	if (present && chip->charger_removed_since_full) {
 		chip->charger_reinserted = true;
-		pr_notice("charger reinserted\n");
+		pr_debug("charger reinserted\n");
 	}
 	if (!present && chip->charger_removed_since_full) {
 		chip->charger_reinserted = false;
-		pr_notice("charger removed again\n");
+		pr_debug("charger removed again\n");
 	}
 }
 
@@ -4116,8 +4112,7 @@ static void process_resume_data(struct qpnp_bms_chip *chip)
 static int bms_suspend(struct device *dev)
 {
 	struct qpnp_bms_chip *chip = dev_get_drvdata(dev);
-//	bool battery_charging = (get_battery_status(chip) == POWER_SUPPLY_STATUS_CHARGING);
-    bool battery_charging = is_battery_charging(chip);
+	bool battery_charging = is_battery_charging(chip);
 	bool hi_power_state = is_hi_power_state_requested(chip);
 	bool charger_present = is_charger_present(chip);
 	bool bms_suspend_config;
@@ -4134,7 +4129,7 @@ static int bms_suspend(struct device *dev)
 	if (!battery_charging && !hi_power_state && !bms_suspend_config)
 		chip->apply_suspend_config = true;
 
-	pr_notice("battery_charging=%d power_state=%s hi_power_state=0x%x apply_suspend_config=%d bms_suspend_config=%d usb_present=%d\n",
+	pr_debug("battery_charging=%d power_state=%s hi_power_state=0x%x apply_suspend_config=%d bms_suspend_config=%d usb_present=%d\n",
 			battery_charging, hi_power_state ? "hi" : "low",
 				chip->hi_power_state,
 				chip->apply_suspend_config, bms_suspend_config,

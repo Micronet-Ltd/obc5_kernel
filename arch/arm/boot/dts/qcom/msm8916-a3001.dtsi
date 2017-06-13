@@ -590,7 +590,9 @@
 	qcom,vddmax-mv = <4250>;
 	qcom,vddsafe-mv = <4200>;
 	qcom,cool-bat-mv = <4100>;
-	qcom,warm-bat-mv = <4100>;	
+	qcom,warm-bat-mv = <4100>;
+	qcom,disable-vbatdet-based-recharge;
+	qcom,charger-detect-eoc;	
 };
 
 / {
@@ -606,7 +608,7 @@
 	status = "ok";
 	qcom,battery-data = <&mtp_batterydata>;
 	/* by skj*/
-	qcom,resume-soc = <99>;
+	qcom,resume-soc = <90>;
 	qcom,charger-detect-cv;		
 };
 
