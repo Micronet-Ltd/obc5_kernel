@@ -501,9 +501,11 @@ static bool is_battery_charging(struct qpnp_bms_chip *chip)
 		chip->batt_psy = power_supply_get_by_name("battery");
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the type property */
-		chip->batt_psy->get_property(chip->batt_psy,
-					POWER_SUPPLY_PROP_CHARGE_TYPE, &ret);
-		return ret.intval != POWER_SUPPLY_CHARGE_TYPE_NONE;
+		//chip->batt_psy->get_property(chip->batt_psy,
+		//			POWER_SUPPLY_PROP_CHARGE_TYPE, &ret);
+		//return ret.intval != POWER_SUPPLY_CHARGE_TYPE_NONE;
+        chip->batt_psy->get_property(chip->batt_psy, POWER_SUPPLY_PROP_STATUS, &ret);
+        return (ret.intval == POWER_SUPPLY_STATUS_CHARGING);
 	}
 
 	/* Default to false if the battery power supply is not registered. */
@@ -1444,11 +1446,11 @@ static void check_recharge_condition(struct qpnp_bms_chip *chip)
 		return;
 
 	if (status == POWER_SUPPLY_STATUS_UNKNOWN) {
-		pr_debug("Unable to read battery status\n");
+		pr_err("Unable to read battery status\n");
 		return;
 	}
 
-	/* Report recharge to charger for SOC based resume of charging */
+    /* Report recharge to charger for SOC based resume of charging */
 	if ((status != POWER_SUPPLY_STATUS_CHARGING) && chip->eoc_reported) {
 		ret.intval = POWER_SUPPLY_STATUS_CHARGING;
 		rc = chip->batt_psy->set_property(chip->batt_psy,
@@ -1536,7 +1538,7 @@ static void check_eoc_condition(struct qpnp_bms_chip *chip)
 				chip->batt_psy->set_property(chip->batt_psy,
 					POWER_SUPPLY_PROP_STATUS, &ret);
 			}
-			pr_debug("SOC dropped (%d) discarding ocv_at_100\n",
+			pr_notice("SOC dropped (%d) discarding ocv_at_100\n",
 							chip->last_soc);
 			chip->ocv_at_100 = -EINVAL;
 		}
@@ -1863,11 +1865,11 @@ static void cv_voltage_check(struct qpnp_bms_chip *chip, int vbat_uv)
 		if ((vbat_uv < (chip->dt.cfg_max_voltage_uv -
 				VBATT_ERROR_MARGIN + CV_DROP_MARGIN))
 			&& !is_battery_taper_charging(chip)) {
-			pr_debug("Fell below CV, releasing cv ws\n");
+            pr_debug("%duV relax\n", vbat_uv);
 			chip->in_cv_state = false;
 			bms_relax(&chip->vbms_cv_wake_source);
 		} else if (!is_battery_charging(chip)) {
-			pr_debug("charging stopped, releasing cv ws\n");
+			pr_debug("charging stopped, relax\n");
 			chip->in_cv_state = false;
 			bms_relax(&chip->vbms_cv_wake_source);
 		}
@@ -1876,7 +1878,7 @@ static void cv_voltage_check(struct qpnp_bms_chip *chip, int vbat_uv)
 			&& ((vbat_uv > (chip->dt.cfg_max_voltage_uv -
 					VBATT_ERROR_MARGIN))
 				|| is_battery_taper_charging(chip))) {
-		pr_debug("CC_TO_CV voltage=%d holding cv ws\n", vbat_uv);
+		pr_debug("%duV awake\n", vbat_uv);
 		chip->in_cv_state = true;
 		bms_stay_awake(&chip->vbms_cv_wake_source);
 	}
@@ -2054,7 +2056,8 @@ static void monitor_soc_work(struct work_struct *work)
 				monitor_soc_work.work);
 	int rc, new_soc = 0, batt_temp;
 
-	bms_stay_awake(&chip->vbms_soc_wake_source);
+//	bms_stay_awake(&chip->vbms_soc_wake_source);
+    pm_stay_awake(chip->dev);
 
 	calculate_delta_time(&chip->tm_sec, &chip->delta_time_s);
 	pr_debug("elapsed_time=%d\n", chip->delta_time_s);
@@ -2140,7 +2143,8 @@ static void monitor_soc_work(struct work_struct *work)
 
 	mutex_unlock(&chip->last_soc_mutex);
 
-	bms_relax(&chip->vbms_soc_wake_source);
+//	bms_relax(&chip->vbms_soc_wake_source);
+    pm_relax(chip->dev);
 }
 
 static void voltage_soc_timeout_work(struct work_struct *work)
@@ -2377,6 +2381,9 @@ static void bms_new_battery_setup(struct qpnp_bms_chip *chip)
 		if (rc)
 			pr_err("Unable to reset aging data rc=%d\n", rc);
 	}
+	if (chip->bms_dev_open) {
+		pm_relax(chip->dev);
+	}
 }
 
 static void battery_insertion_check(struct qpnp_bms_chip *chip)
@@ -2450,16 +2457,16 @@ static void reported_soc_check_status(struct qpnp_bms_chip *chip)
 		chip->reported_soc_high_current = true;
 		chip->charger_removed_since_full = true;
 		chip->charger_reinserted = false;
-		pr_debug("reported_soc enters high current mode\n");
+		pr_debug("enters high current mode\n");
 		return;
 	}
 	if (present && chip->charger_removed_since_full) {
 		chip->charger_reinserted = true;
-		pr_debug("reported_soc: charger reinserted\n");
+		pr_debug("charger reinserted\n");
 	}
 	if (!present && chip->charger_removed_since_full) {
 		chip->charger_reinserted = false;
-		pr_debug("reported_soc: charger removed again\n");
+		pr_debug("charger removed again\n");
 	}
 }
 
@@ -3131,10 +3138,11 @@ static ssize_t vm_bms_read(struct file *file, char __user *buf, size_t count,
 	/* wakelock-timeout for userspace to pick up */
 	pm_wakeup_event(chip->dev, BMS_READ_TIMEOUT);
 
-	return sizeof(chip->bms_data);
+	rc = sizeof(chip->bms_data);
 
 fail_read:
 	pm_relax(chip->dev);
+
 	return rc;
 }
 
@@ -4093,8 +4101,8 @@ static void process_resume_data(struct qpnp_bms_chip *chip)
 
 		chip->data_ready = 1;
 		wake_up_interruptible(&chip->bms_wait_q);
-		if (chip->bms_dev_open)
-			pm_stay_awake(chip->dev);
+//		if (chip->bms_dev_open)
+//			pm_stay_awake(chip->dev);
 
 	}
 	chip->suspend_data_valid = false;
