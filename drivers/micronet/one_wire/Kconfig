@@ -1,0 +1,16 @@
+menuconfig MICRONET_OBC
+	bool "Micronet OBC drivers"
+	---help---
+	  Say Y here to get Micronet OBC drivers.
+
+
+if MICRONET_OBC
+
+config MICRONET_ONE_WIRE
+	tristate "One wire driver"
+	help
+	  Micronet OBC one wire Driver.
+
+
+endif
+		

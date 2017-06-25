@@ -49,6 +49,7 @@ struct watch_dog_pin_info{
     spinlock_t rfkillpin_lock;
     unsigned long lock_flags;
     int suspend;
+    int suspend_ind_a;
 };
 
 int proc_rf_kill_pin = -1;
@@ -333,7 +334,8 @@ static int watchdog_pin_probe(struct platform_device *op)
 		if (rc < 0) {
 			pr_err("suspend-ind-pin is busy\n");
 		} else {
-			gpio_direction_output(inf->suspend_ind, 0);
+            inf->suspend_ind_a = 1;
+			gpio_direction_output(inf->suspend_ind, inf->suspend_ind_a^1);
 			gpio_export(inf->suspend_ind, 0);
 		}
 	} else {
@@ -419,7 +421,7 @@ static int watchdog_pin_prepare(struct device *dev)
     }
 
 	if(gpio_is_valid(wdi->suspend_ind)){
-        gpio_set_value(wdi->suspend_ind, wdi->suspend_ind^1);
+        gpio_set_value(wdi->suspend_ind, wdi->suspend_ind_a);
     }
 
     return 0;
@@ -456,7 +458,7 @@ static int watchdog_pin_resume(struct device *dev)
 
 	if(gpio_is_valid(wdi->suspend_ind)){
 		pr_notice("notify to mcu about resume\n");
-		gpio_set_value(wdi->suspend_ind, wdi->suspend_ind^1);
+		gpio_set_value(wdi->suspend_ind, wdi->suspend_ind_a^1);
 	}
 
     if(gpio_is_valid(wdi->rf_kill_pin)){

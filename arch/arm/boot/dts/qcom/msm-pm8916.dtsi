@@ -213,7 +213,7 @@
 			qcom,ibatsafe-ma = <1440>;
 			qcom,thermal-mitigation = <1440 720 630 0>;
 			qcom,cool-bat-decidegc = <100>;
-			qcom,warm-bat-decidegc = <450>;
+			qcom,warm-bat-decidegc = <500>;
 			qcom,cool-bat-mv = <4100>;
 			qcom,warm-bat-mv = <4100>;
 			qcom,ibatmax-warm-ma = <360>;

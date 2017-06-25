@@ -44,7 +44,6 @@ struct suspend_tm_data {
     struct device           dev_f;
     struct miscdevice       mdev;
     struct miscdevice       dev_ign_tm;
-    struct miscdevice       dev_ign_lvl;
     unsigned long           open;
     uint32_t                to_sp;
     uint32_t                to_db;
@@ -52,140 +51,16 @@ struct suspend_tm_data {
     uint32_t                to_ign_db;
     int32_t                 c_sp;
     int32_t                 c_ign_tm;
-    int32_t                 c_ign_lvl;
     struct device_attribute dev_attr;
     struct device_attribute dev_attr_ito;
-    struct device_attribute dev_attr_ign;
     spinlock_t              dev_lock;
     unsigned long           lock_flags;
-    int32_t                 ign_active_pin;
-    int32_t                 ign_gpio_offset;
-    int32_t                 ign_active_lvl;
-    int32_t                 ign_change_irq;
-    struct delayed_work     ign_change_work;
     wait_queue_head_t       wq_sp;
     struct completion       completion_sp;
     wait_queue_head_t       wq_ign_tm;
     struct completion       completion_ign_tm;
-    wait_queue_head_t       wq_ign_changed;
-    struct notifier_block   ignition_notifier;
-    int32_t                 proj;
 };
 ///////////////////////
-/* A3001 
-static irqreturn_t sp_ign_change_handler(int32_t irq, void *irq_data)
-{
-    struct suspend_tm_data *data = irq_data;
-    disable_irq_nosync(data->ign_change_irq);
-    pr_notice("ignition is changeed\n");
-    schedule_delayed_work(&data->ign_change_work, 0); 
-    return IRQ_HANDLED;
-}
-*/
-static void __ref sp_ign_change_work(struct work_struct *work)
-{
-    struct suspend_tm_data* data = container_of(work, struct suspend_tm_data, ign_change_work.work);
-
-    pr_notice("\n");
-    spin_lock_irqsave(&data->dev_lock, data->lock_flags);
-    data->c_ign_lvl = 1;
-    spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
-
-    wake_up(&data->wq_ign_changed);
-/* A3001 
-    enable_irq(data->ign_change_irq);
-*/
-}
-static int32_t __ref sp_ign_callback(struct notifier_block *nfb, unsigned long val, void *arg)
-{
-    struct suspend_tm_data *data = container_of(nfb, struct suspend_tm_data, ignition_notifier);
-
-    pr_notice("%ld\n", val);
-    if (val & (1 << data->ign_gpio_offset)) {
-        schedule_delayed_work(&data->ign_change_work, 0); 
-    }
-    return NOTIFY_OK;
-}
- 
-static int32_t sp_ign_init(struct platform_device* pdev, struct suspend_tm_data* data)
-{
-    int32_t err = 0, val;
-    const char *proj;
-    uint32_t arr[2] = {0};
-
-    val = 692;//temp!!! of_get_named_gpio_flags(np, "qcom,irq-ign-gpio", 0, (enum of_gpio_flags *)&data->ign_active_lvl);
-    data->ign_gpio_offset = 0;
-    val += data->ign_gpio_offset;
-
-    proj = of_get_property(pdev->dev.of_node, "a3xxx-project", NULL);
-    if(proj && strncmp("A3002", proj, 5) == 0)
-    {
-        data->proj = 0xA3002;
-        pr_err("project A3002\n");
-        err = of_property_read_u32_array(pdev->dev.of_node, "a3xxx,virt-gpio", arr, 2);
-        if(!err) 
-        {
-            val                     = arr[0];//base
-            data->ign_gpio_offset   = arr[1];//offset
-            val += data->ign_gpio_offset;
-            pr_err("!!!!arr %u  %u\n", arr[0], arr[1]);
-        }
-    }
-    //TODO else A3001
-    //
-
-    if(!gpio_is_valid(val)) 
-    {
-        data->ign_active_pin = -1;
-        return -1;
-    }
-
-    pr_notice("ignition detect pin %d\n", val);
-    data->ign_active_pin = val;
-
-    if (gpio_is_valid(data->ign_active_pin)) 
-    {
-        err = devm_gpio_request(&pdev->dev, data->ign_active_pin, pdev->name);
-        if(err < 0) 
-        {
-            pr_err("failure to request the gpio[%d] (%d)\n", data->ign_active_pin, err);
-            return err;
-        }
-        err = gpio_direction_input(data->ign_active_pin);
-        if(err < 0) {
-            pr_err("failure to set direction of the gpio[%d] (%d)\n", data->ign_active_pin, err);
-            return err;
-        }
-        err = gpio_export(data->ign_active_pin, 0);
-        if(err < 0) {
-            pr_err("failure to export of the gpio[%d] (%d)\n", data->ign_active_pin, err);
-            return err;
-        }
-/*     TODO: if(0xA3002 != data->proj)
-
-         
-        data->ign_change_irq = __gpio_to_irq(data->ign_active_pin);
-        if(data->ign_change_irq < 0) 
-        {
-            err = data->ign_change_irq;
-            pr_err("failure to request gpio[%d] irq, err %d\n", data->ign_active_pin, err);
-            return err;
-        }
-
-        err = devm_request_irq(&pdev->dev, data->ign_change_irq, sp_ign_change_handler,
-                                       IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-                                       pdev->name, data);
-        if(!err) {
-            disable_irq_nosync(data->ign_change_irq);
-        } 
-        else 
-        {
-            pr_err("failure to request irq[%d] irq (%d)\n", data->ign_active_pin, err);
-        }
-*/
-    }
-    return err;
-}
 ///////////////
 static int32_t test_timeout(uint32_t val)
 {
@@ -416,85 +291,6 @@ static const struct file_operations suspend_tm_dev_fops = {
 	.poll       = suspend_tm_poll,
 };
 ///////////////////////////////////////////////////////////////////////////
-static int32_t ign_open(struct inode *inode, struct file *file)
-{
-    struct miscdevice *miscdev =  file->private_data;
-    struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, dev_ign_lvl);
-
-    pr_notice("+\n");
-    if(test_and_set_bit(IGN_LVL_BIT, &data->open))
-    {
-        pr_err("error bit");
-        return -EPERM;
-    }
-    return 0;
-}
-static int32_t ign_release(struct inode *inode, struct file *file)
-{
-    struct miscdevice *miscdev =  file->private_data;
-    struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, dev_ign_lvl);
-
-    pr_notice("\n");
-    clear_bit(IGN_LVL_BIT, &data->open);
-
-    return 0;
-}
-
-static ssize_t ign_read(struct file * file, char __user * buf, size_t count, loff_t *ppos)
-{
-    struct miscdevice *miscdev =  file->private_data;
-    struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, dev_ign_lvl);
-
-    uint8_t output[32] = {0};
-
-    pr_info("+\n");
-    if(0 == test_bit(IGN_LVL_BIT, &data->open)) {
-        return -EINVAL;
-    }
-    spin_lock_irqsave(&data->dev_lock, data->lock_flags);
-    if (gpio_is_valid(data->ign_active_pin)) {
-        data->ign_active_lvl = __gpio_get_value(data->ign_active_pin);
-        sprintf(output, "%d\n", data->ign_active_lvl);
-    }
-    data->c_ign_lvl  = 0;
-    spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
-
-    if(copy_to_user(buf, output, strlen(output)))
-        return -EINVAL;
-
-    pr_info(": %s\n", output);
-
-    return strlen(output);
-}
-static ssize_t ign_write(struct file * file, const char __user * buf, size_t count, loff_t * ppos)
-{
-    pr_notice("\n");
-    return 0;//-EINVAL;
-}
-static uint32_t ign_poll(struct file * file,  poll_table * wait)
-{
-    struct miscdevice *miscdev =  file->private_data;
-    struct suspend_tm_data *data = container_of(miscdev, struct suspend_tm_data, dev_ign_lvl);
-
-    uint32_t mask = 0;
-
-    poll_wait(file, &data->wq_ign_changed, wait);
-    spin_lock_irqsave(&data->dev_lock, data->lock_flags);
-    if(0 != data->c_ign_lvl)
-        mask |= POLLIN | POLLRDNORM;
-    spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
-
-    return mask;
-}
-static const struct file_operations ign_dev_fops = {
-	.owner      = THIS_MODULE,
-	.llseek     = no_llseek,
-	.read       = ign_read,
-	.write      = ign_write,
-	.open       = ign_open,
-	.release    = ign_release,
-	.poll       = ign_poll,
-};
 
 static ssize_t suspend_tm_set(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -611,34 +407,22 @@ static ssize_t ignition_tm_show(struct device* dev, struct device_attribute *att
     }
     return sprintf(buf, "%d\n", value);
 }
-static ssize_t ignition_show(struct device* dev, struct device_attribute *attr, char *buf) 
-{
-    struct suspend_tm_data* data = container_of(dev, struct suspend_tm_data, dev_f);
-    if (gpio_is_valid(data->ign_active_pin)) {
-        data->ign_active_lvl = __gpio_get_value(data->ign_active_pin);
-    }
-    pr_info("%s: %u\n", __func__, data->ign_active_lvl);
-    return sprintf(buf, "%d\n", (int32_t)data->ign_active_lvl);
-}
 
 static void suspend_tm_delete(struct suspend_tm_data *data)
 {
-    cancel_delayed_work(&data->ign_change_work);
 
     device_remove_file(&data->dev_f, &data->dev_attr);
     device_remove_file(&data->dev_f, &data->dev_attr_ito);
-    device_remove_file(&data->dev_f, &data->dev_attr_ign);
     device_unregister(&data->dev_f);
 
     misc_deregister(&data->mdev);
     misc_deregister(&data->dev_ign_tm);
-    misc_deregister(&data->dev_ign_lvl);
 }
 
 static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
 {
     struct suspend_tm_data *data;
-    int32_t err, fd;
+    int32_t err;
 
     pr_notice("\n");
 
@@ -646,32 +430,13 @@ static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
     if(!data)
         return ERR_PTR(-ENOMEM);
 
-    err = sp_ign_init(pdev, data);
-    if(err) {
-        dev_err(&pdev->dev, "could not init ignition gpio irq, err %d\n", err);
-        kfree(data);
-        return ERR_PTR(err);
-    }
-    if(0xA3002 == data->proj)
-    {
-        data->ignition_notifier.notifier_call = sp_ign_callback;
-        fd = gpio_in_register_notifier(&data->ignition_notifier);
-        if (fd) {
-            pr_err("failure to register remount notifier [%d]\n", fd);
-            kfree(data);
-            return ERR_PTR(err);
-        }
-    }
     spin_lock_init(&data->dev_lock);
     init_waitqueue_head(&data->wq_sp);
     init_completion(&data->completion_sp);
     init_waitqueue_head(&data->wq_ign_tm);
     init_completion(&data->completion_ign_tm);
-    init_waitqueue_head(&data->wq_ign_changed);
-    INIT_DELAYED_WORK(&data->ign_change_work, sp_ign_change_work);
 ///
 
-    //data->dev_f.parent = &pdev->dev;
     dev_set_name(&data->dev_f, "suspend_timeout");
 
     err = device_register(&data->dev_f);
@@ -711,22 +476,6 @@ static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
         kfree(data);
         return ERR_PTR(err);
     }
-    sysfs_attr_init(&data->dev_attr_ign.attr);
-    data->dev_attr_ign.attr.name = "ignition_value";
-    data->dev_attr_ign.attr.mode = S_IRUGO;
-
-    data->dev_attr_ign.show = ignition_show;
-    data->dev_attr_ign.store = NULL;
-
-    err = device_create_file(&data->dev_f, &data->dev_attr_ign);
-    if (err) {
-        dev_err(&pdev->dev, "could not create sysfs %s file\n", data->dev_attr_ign.attr.name);
-        device_remove_file(&data->dev_f, &data->dev_attr);
-        device_remove_file(&data->dev_f, &data->dev_attr_ito);
-        device_unregister(&data->dev_f);
-        kfree(data);
-        return ERR_PTR(err);
-    }
 
     data->mdev.minor    = MISC_DYNAMIC_MINOR;
     data->mdev.name	= "suspend_timeout";
@@ -738,7 +487,6 @@ static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
     if(err) {
         device_remove_file(&data->dev_f, &data->dev_attr);
         device_remove_file(&data->dev_f, &data->dev_attr_ito);
-        device_remove_file(&data->dev_f, &data->dev_attr_ign);
         device_unregister(&data->dev_f);
         kfree(data);
         pr_err("%s: failure to register misc device, err %d\n", __func__, err);
@@ -756,31 +504,12 @@ static struct suspend_tm_data *suspend_tm_create(struct platform_device *pdev)
         misc_deregister(&data->mdev);
         device_remove_file(&data->dev_f, &data->dev_attr);
         device_remove_file(&data->dev_f, &data->dev_attr_ito);
-        device_remove_file(&data->dev_f, &data->dev_attr_ign);
         device_unregister(&data->dev_f);
         kfree(data);
         pr_err("%s: failure to register misc device, err %d\n", __func__, err);
         return ERR_PTR(err);
     }
 
-    data->dev_ign_lvl.minor = MISC_DYNAMIC_MINOR;
-    data->dev_ign_lvl.name	= "ignition_level";
-    data->dev_ign_lvl.fops	= &ign_dev_fops;
-
-//    pr_notice("%s: register %s\n", __func__, led->mdev.name);
-
-    err = misc_register(&data->dev_ign_lvl);
-    if(err) {
-        misc_deregister(&data->mdev);
-        misc_deregister(&data->dev_ign_tm);
-        device_remove_file(&data->dev_f, &data->dev_attr);
-        device_remove_file(&data->dev_f, &data->dev_attr_ito);
-        device_remove_file(&data->dev_f, &data->dev_attr_ign);
-        device_unregister(&data->dev_f);
-        kfree(data);
-        pr_err("%s: failure to register misc device, err %d\n", __func__, err);
-        return ERR_PTR(err);
-    }
 
     return data;
 }

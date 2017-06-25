@@ -719,7 +719,7 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 		 * Report removal of current jack type.
 		 * Headphone to headset shouldn't report headphone
 		 * removal.
-		 */
+		 */		 
 		if (mbhc->mbhc_cfg->detect_extn_cable &&
 		    (mbhc->current_plug == MBHC_PLUG_TYPE_HIGH_HPH ||
 		    jack_type == SND_JACK_LINEOUT) &&
@@ -1420,9 +1420,11 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 		r = IRQ_NONE;
 	} else {
 		/* add by howard to avoid pop sound after insert headset */
-		if(gpio_is_valid(ext_spk_pa_gpio))
-			gpio_direction_output(ext_spk_pa_gpio, 0);
-		pr_info("wcd_mbhc_mech_plug_detect_irq, howard set ext pa gpio 0\n");
+		if(mbhc->current_plug==MBHC_PLUG_TYPE_NONE){
+			if(gpio_is_valid(ext_spk_pa_gpio))
+				gpio_direction_output(ext_spk_pa_gpio, 0);
+			pr_info("wcd_mbhc_mech_plug_detect_irq, howard set ext pa gpio 0\n");
+		}
 		/* Call handler */
 		wcd_mbhc_swch_irq_handler(mbhc);
 		wcd9xxx_spmi_unlock_sleep();
@@ -1466,7 +1468,7 @@ static irqreturn_t wcd_mbhc_hs_ins_irq(int irq, void *data)
 	static u16 hphl_trigerred;
 	static u16 mic_trigerred;
 
-	pr_debug("%s: enter\n", __func__);
+	pr_debug("%s: enter\n", __func__);		
 	if (!mbhc->mbhc_cfg->detect_extn_cable) {
 		pr_debug("%s: Returning as Extension cable feature not enabled\n",
 			__func__);

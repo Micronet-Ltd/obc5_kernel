@@ -40,6 +40,7 @@
 #include <linux/irqchip/msm-mpm-irq.h>
 #include <linux/mutex.h>
 #include <asm/arch_timer.h>
+#include <linux/clk/msm-clk-provider.h>
 
 enum {
 	MSM_MPM_GIC_IRQ_DOMAIN,
@@ -505,12 +506,10 @@ static bool msm_mpm_interrupts_detectable(int d, bool from_idle)
 	if (debug_mask && !ret) {
 		int i = 0;
 		i = find_first_bit(irq_bitmap, unlisted->size);
-		pr_info("%s(): %s preventing system sleep modes during %s\n",
-				__func__, unlisted->domain_name,
-				from_idle ? "idle" : "suspend");
+		pr_notice("%s preventing system sleep modes during %s\n", unlisted->domain_name, from_idle ? "idle" : "suspend");
 
 		while (i < unlisted->size) {
-			pr_info("\thwirq: %d\n", i);
+			pr_notice("\thwirq: %d\n", i);
 			i = find_next_bit(irq_bitmap, unlisted->size, i + 1);
 		}
 	}
@@ -568,11 +567,22 @@ void msm_mpm_exit_sleep(bool from_idle)
 
 	for (i = 0; i < MSM_MPM_REG_WIDTH; i++) {
 		pending = msm_mpm_read(MSM_MPM_REG_STATUS, i);
+        if (0 /*!from_idle && (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)*/) {
+            k = find_first_bit(&pending, 32);
+            while (k < 32) {
+                unsigned int mpm_irq = 32 * i + k;
+                unsigned int apps_irq = msm_mpm_get_irq_m2a(mpm_irq);
+                struct irq_desc *desc = apps_irq ? irq_to_desc(apps_irq) : 0;
+
+                pr_notice("pending irq[%d, %d] %s\n", apps_irq, mpm_irq, (desc)?(desc->action && desc->action->name)?desc->action->name:"no name irq":"no irq");
+
+                k = find_next_bit(&pending, 32, k + 1);
+            }
+        }
 		pending &= enabled_intr[i];
 
 		if (!from_idle && (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)) {
-			pr_info("%s: enabled_intr.%d pending.%d: 0x%08x 0x%08lx\n",
-                __func__, i, i, enabled_intr[i], pending);
+			pr_info("enabled_intr.%d 0x%08x pending.%d: 0x%08lx\n", i, enabled_intr[i], i, pending);
         }
 
 		k = find_first_bit(&pending, 32);
@@ -583,7 +593,7 @@ void msm_mpm_exit_sleep(bool from_idle)
 				irq_to_desc(apps_irq) : NULL;
 
             if (!from_idle && (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)) {
-                pr_notice("wake irq[%d]\n", apps_irq);
+                pr_notice("wake irq[%d, %d] %s\n", apps_irq, mpm_irq, (desc)?(desc->action && desc->action->name)?desc->action->name:"no name irq":"no irq");
             }
 
 			if (desc && !irqd_is_level_type(&desc->irq_data)) {
@@ -620,6 +630,7 @@ static void msm_mpm_sys_low_power_modes(bool allow)
 		}
 	}
 	mutex_unlock(&enable_xo_mutex);
+//    pr_notice("clk[xo, %lu, %d]\n", clk_get_rate(xo_clk), allow);
 }
 
 void msm_mpm_suspend_prepare(void)
@@ -627,6 +638,7 @@ void msm_mpm_suspend_prepare(void)
 	bool allow;
 	unsigned long flags;
 
+    pr_notice("\n");
 	spin_lock_irqsave(&msm_mpm_lock, flags);
 
 	allow = msm_mpm_irqs_detectable(false) &&
@@ -643,6 +655,7 @@ void msm_mpm_suspend_wake(void)
 	bool allow;
 	unsigned long flags;
 
+    pr_notice("\n");
 	spin_lock_irqsave(&msm_mpm_lock, flags);
 
 	allow = msm_mpm_irqs_detectable(true) &&

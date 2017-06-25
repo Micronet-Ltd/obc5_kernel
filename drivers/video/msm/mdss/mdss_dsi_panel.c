@@ -585,8 +585,6 @@ static void mdss_dsi_panel_switch_mode(struct mdss_panel_data *pdata,
 	return;
 }
 
-extern void tp_gesture_enable_func(void);
-extern void tp_gesture_disable_func(void);
 static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 							u32 bl_level)
 {
@@ -600,14 +598,6 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
-
-    #ifdef CONFIG_TOUCHSCREEN_FT5X36
-    if(0 == bl_level){
-        tp_gesture_enable_func();
-    }else{
-        tp_gesture_disable_func();
-    }
-    #endif
     
 	/*
 	 * Some backlight controllers specify a minimum duty cycle
