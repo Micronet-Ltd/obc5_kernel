@@ -215,12 +215,12 @@ static void ci13xxx_msm_notify_event(struct ci13xxx *udc, unsigned event)
 		}
 		else /* add by shengweiguang for J20 mdm end */
 		{
-		dev_info(dev, "CI13XXX_CONTROLLER_CONNECT_EVENT received\n");
+        dev_notice(dev, "CI13XXX_CONTROLLER_CONNECT_EVENT\n");
 		ci13xxx_msm_connect();
 		}
 		break;
 	case CI13XXX_CONTROLLER_SUSPEND_EVENT:
-		dev_info(dev, "CI13XXX_CONTROLLER_SUSPEND_EVENT received\n");
+        dev_notice(dev, "CI13XXX_CONTROLLER_SUSPEND_EVENT\n");
 		ci13xxx_msm_suspend();
 		break;
 	case CI13XXX_CONTROLLER_RESUME_EVENT:
