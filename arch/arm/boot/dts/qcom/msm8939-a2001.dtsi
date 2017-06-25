@@ -191,6 +191,7 @@
 			gpios = <&msm_gpio 49 0x1>;
 			linux,input-type = <1>;
 			linux,code = <212>;
+			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
 
@@ -208,6 +209,7 @@
 			gpios = <&msm_gpio 109 0x1>;
 			linux,input-type = <1>;
 			linux,code = <250>;
+			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
 	};
@@ -222,8 +224,8 @@
 			interrupt-parent = <&msm_gpio>;
 			interrupts = <114 0x2>;
 			vdd-supply = <&pm8916_l17>;
-			vlogic-supply = <&pm8916_l16>;
-			vi2c-supply = <&pm8916_l6>;
+			vlogic-supply = <&pm8916_l6>;
+			//vi2c-supply = <&pm8916_l16>;
 			invn,use-interrupt;
 			invn,gpio-int = <&msm_gpio 114 0x2>;
 			invn,place = "Landscape Left";
@@ -282,7 +284,7 @@
 			reg = <0x76>;
 			compatible = "bosch,bmp280";
 			vdd-supply = <&pm8916_l17>;
-			vddio-supply = <&pm8916_l6>;
+			vio-supply = <&pm8916_l6>;
 			bosch,chip-id = <0x58>;
 			bosch,oversample = <3>;
 			bosch,period = <1000>;
@@ -437,7 +439,7 @@
 		qcom,rpull-up-kohm = <100>;
 		qcom,vref-batt-therm = <1800000>;
 
-		#include "batterydata-palladium-3500.dtsi"
+		#include "batterydata-palladium-4000.dtsi"
 	};
 };
 
@@ -468,6 +470,7 @@
 
 #include  "dsi_panel_nt35596_txd_auo5p5_fhd_video.dtsi"
 #include  "dsi_panel_otm1901_booyi_auo5p5_fhd_video.dtsi"
+#include  "dsi_panel_otm1901_gongtai_auo5p5_fhd_video.dtsi"
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
@@ -609,5 +612,10 @@
 
 // by skj
 &pm8916_l13 {
+	regulator-always-on;
+};
+
+// by skj
+&pm8916_l10 {
 	regulator-always-on;
 };

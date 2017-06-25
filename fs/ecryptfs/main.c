@@ -481,6 +481,7 @@ out:
 
 struct kmem_cache *ecryptfs_sb_info_cache;
 static struct file_system_type ecryptfs_fs_type;
+static struct file_system_type ecryptfs_vfat_fs_type;
 
 /**
  * ecryptfs_get_sb
@@ -628,6 +629,15 @@ static struct file_system_type ecryptfs_fs_type = {
 	.mount = ecryptfs_mount,
 	.kill_sb = ecryptfs_kill_block_super,
 	.fs_flags = 0
+};
+MODULE_ALIAS_FS("ecryptfs");
+
+static struct file_system_type ecryptfs_vfat_fs_type = {
+        .owner = THIS_MODULE,
+        .name = "ecryptfs_vfat",
+        .mount = ecryptfs_mount,
+        .kill_sb = ecryptfs_kill_block_super,
+        .fs_flags = 0
 };
 MODULE_ALIAS_FS("ecryptfs");
 
@@ -843,6 +853,11 @@ static int __init ecryptfs_init(void)
 		       "rc = [%d]\n", rc);
 		goto out_release_messaging;
 	}
+        rc = register_filesystem(&ecryptfs_vfat_fs_type);
+        if (rc) {
+                printk(KERN_ERR "Failed to register filesystem\n");
+                goto out_destroy_crypto;
+        }
 	rc = register_filesystem(&ecryptfs_fs_type);
 	if (rc) {
 		printk(KERN_ERR "Failed to register filesystem\n");
@@ -879,6 +894,7 @@ static void __exit ecryptfs_exit(void)
 	ecryptfs_destroy_kthread();
 	do_sysfs_unregistration();
 	unregister_filesystem(&ecryptfs_fs_type);
+        unregister_filesystem(&ecryptfs_vfat_fs_type);
 	ecryptfs_free_kmem_caches();
 }
 

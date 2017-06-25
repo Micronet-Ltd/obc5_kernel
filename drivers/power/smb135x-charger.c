@@ -10,7 +10,9 @@
  * GNU General Public License for more details.
  */
 // by skj
-// #define DEBUG 1
+//#define DEBUG 1
+
+//#define SLOW_INCREASE_CURRENT
  
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
@@ -450,6 +452,9 @@ static struct wake_lock smb135x_wakelock;
 void msm_otg_recover_vbus(void);
 extern int qrt_mdm_usb_mng_enable; 
 int pa_ctrl_pin=(-1);
+
+static struct regulator * ldo13=0;
+static int ldo13_on=0;
 
 static int smb135x_set_fastchg_current(struct smb135x_chg *chip,
 							int current_ma);
@@ -1201,8 +1206,13 @@ static int smb135x_set_high_usb_chg_current(struct smb135x_chg *chip,
  *	if CDP/DCP it will look at 0x0C setting
  *		i.e. values in 0x41[1, 0] does not matter
  */
+#ifdef SLOW_INCREASE_CURRENT 
+static int smb135x_set_usb_chg_current_internal(struct smb135x_chg *chip,
+							int current_ma)
+#else
 static int smb135x_set_usb_chg_current(struct smb135x_chg *chip,
 							int current_ma)
+#endif
 {
 	int rc;
 
@@ -1275,6 +1285,41 @@ out:
 			"Couldn't set %dmA rc = %d\n", current_ma, rc);
 	return rc;
 }
+
+#ifdef SLOW_INCREASE_CURRENT 
+static struct delayed_work work_slow_increase_delay;	
+static struct smb135x_chg *chip_bak;
+static int current_work_bak=0;
+static int current_work_now=0;
+
+static void slow_increase_work(struct work_struct *work) 
+{
+	if(current_work_bak>current_work_now){
+		current_work_now=current_work_now+100;
+		pr_debug("current_work_bak:%d current_work_now:%d\n",current_work_bak,current_work_now);
+		smb135x_set_usb_chg_current_internal(chip_bak,current_work_now);
+		schedule_delayed_work(&work_slow_increase_delay,msecs_to_jiffies(500));
+	}
+}
+
+static int smb135x_set_usb_chg_current(struct smb135x_chg *chip,
+							int current_ma)
+{
+	static int init_done=0;
+
+	chip_bak=chip;
+	current_work_bak=current_ma;
+	current_work_now=500;
+	smb135x_set_usb_chg_current_internal(chip,current_work_now);	
+	if(0==init_done){
+		init_done=1;
+		INIT_DELAYED_WORK(&work_slow_increase_delay, slow_increase_work);
+	}
+	if(current_work_bak>current_work_now)
+		schedule_delayed_work(&work_slow_increase_delay,msecs_to_jiffies(500));
+	return 0;
+}
+#endif
 
 static int smb135x_set_dc_chg_current(struct smb135x_chg *chip,
 							int current_ma)
@@ -1419,7 +1464,6 @@ static int smb135x_charging_set(struct smb135x_chg *chip, int enable)
 		return -EINVAL;
 	}
 
-
 	rc = smb135x_masked_write(chip, CMD_CHG_REG,
 			CMD_CHG_EN, enable ? CMD_CHG_EN : 0);
 	if (rc < 0) {
@@ -1427,6 +1471,11 @@ static int smb135x_charging_set(struct smb135x_chg *chip, int enable)
 			"Couldn't set CHG_ENABLE_BIT enable = %d rc = %d\n",
 			enable, rc);
 		return rc;
+	}
+
+	if(enable && chip->chg_enabled){
+		__smb135x_usb_suspend(chip,false);
+		__smb135x_dc_suspend(chip,false);
 	}
 
 	pr_debug("charging %s\n",
@@ -1695,7 +1744,7 @@ static int smb135x_battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_STATUS:
 		val->intval = smb135x_get_prop_batt_status(chip);
 #ifdef FAKE_CHARGING_DISPLAY			
-		if(last_percent>=99 && POWER_SUPPLY_STATUS_CHARGING==val->intval)
+		if(last_percent>=99 && (chip->usb_present || chip->dc_present))
 			val->intval=POWER_SUPPLY_STATUS_FULL;
 #endif			
 		break;
@@ -2743,10 +2792,7 @@ static int handle_usb_removal(struct smb135x_chg *chip)
 		pr_debug("setting usb psy present = %d\n", chip->usb_present);
 		power_supply_set_present(chip->usb_psy, chip->usb_present);
 		pr_debug("setting usb psy allow detection 0\n");
-		power_supply_set_allow_detection(chip->usb_psy, 0);
-	
-
-		smb135x_set_usb_chg_current(chip,USB_MAX_CURRENT);		
+		power_supply_set_allow_detection(chip->usb_psy, 0);	
 	}
 	return 0;
 }
@@ -2829,11 +2875,6 @@ static int handle_usb_insertion(struct smb135x_chg *chip)
 		power_supply_set_supply_type(chip->usb_psy, usb_supply_type);
 		pr_debug("setting usb psy present = %d\n", chip->usb_present);
 		power_supply_set_present(chip->usb_psy, chip->usb_present);
-		// by skj debug
-		if(0x40 & reg)
-			smb135x_set_usb_chg_current(chip,AC_MAX_CURRENT);
-		else
-			smb135x_set_usb_chg_current(chip,USB_MAX_CURRENT);
 	}
 	chip->apsd_rerun = false;
 	return 0;
@@ -2925,9 +2966,21 @@ static int src_detect_handler(struct smb135x_chg *chip, u8 rt_stat)
 {
 #if 1
 	bool usb_present = !!rt_stat;
+	u8 reg;
+	int rc;
+	int reg_present;
 
 	pr_debug("chip->usb_present = %d usb_present = %d\n",
 			chip->usb_present, usb_present);
+	
+	rc = smb135x_read(chip, IRQ_E_REG, &reg);
+	if(0==rc){
+		reg_present = (0==(reg & 0x50)) || (0==(reg & 0x05));
+		reg_present = reg_present & 0x1;
+		usb_present = usb_present && reg_present;
+		pr_debug("skj reg_present = %d usb_present = %d\n",
+				reg_present, usb_present);		
+	}
 
 	if (!chip->usb_present && usb_present) {
 		/* USB inserted */
@@ -3653,7 +3706,7 @@ static int smb135x_hw_init(struct smb135x_chg *chip)
 	rc = smb135x_masked_write(chip, CFG_14_REG,
 			CHG_EN_BY_PIN_BIT | CHG_EN_ACTIVE_LOW_BIT
 			| PRE_TO_FAST_REQ_CMD_BIT | DISABLE_AUTO_RECHARGE_BIT
-			| EN_CHG_INHIBIT_BIT, reg);
+			| EN_CHG_INHIBIT_BIT | DISABLE_CURRENT_TERM_BIT, reg);
 	if (rc < 0) {
 		dev_err(chip->dev, "Couldn't set cfg 14 rc=%d\n", rc);
 		goto free_regulator;
@@ -4323,14 +4376,13 @@ static void smb135x_temp_monitor_work(struct work_struct *work)
 	u8 reg;
 	int rc;
 	int current_ma;
-	static struct regulator * ldo13=0;
-	static int ldo13_is_on=0;
+	static int usb_current_last=USB_MAX_CURRENT;
 	
 	pr_debug("skj smb135x_temp_monitor_work\n");
 	charging=smb135x_get_prop_batt_status(chip);	
 	chip->current_bat_decidegc=smb135x_get_batt_temp(chip);
 	capacity=smb135x_get_prop_batt_capacity(chip);
-	charger_present=chip->usb_present;
+	charger_present=chip->usb_present || chip->dc_present;
 	chip->health=get_battery_health(chip->current_bat_decidegc);
 	
 	pr_debug("skj smb135x chg:%d,cap:%d,usb:%d,temp:%d\n",
@@ -4348,10 +4400,14 @@ static void smb135x_temp_monitor_work(struct work_struct *work)
 	}
 
 	rc = smb135x_read(chip, STATUS_5_REG, &reg);
-	if(0x40 & reg)
-		smb135x_set_usb_chg_current(chip,AC_MAX_CURRENT);	
-	else
-		smb135x_set_usb_chg_current(chip,USB_MAX_CURRENT);	
+	if(0!=(0x40 & reg) && AC_MAX_CURRENT!=usb_current_last){
+		smb135x_set_usb_chg_current(chip,AC_MAX_CURRENT);
+		usb_current_last=AC_MAX_CURRENT;
+	}
+	if(0==(0x40 & reg) && USB_MAX_CURRENT!=usb_current_last){
+		smb135x_set_usb_chg_current(chip,USB_MAX_CURRENT);
+		usb_current_last=USB_MAX_CURRENT;
+	}	
 
 	if(chip->fastchg_ma != -EINVAL)
 		current_ma=chip->fastchg_ma;
@@ -4378,45 +4434,25 @@ static void smb135x_temp_monitor_work(struct work_struct *work)
 		rc = chip->usb_psy->get_property(chip->usb_psy,
 			POWER_SUPPLY_PROP_PRESENT, &value);
 		if(0==rc){
-			rc = smb135x_read(chip, CMD_CHG_REG, &reg);
-			if(0==(reg & 0x1)){
-				rc = smb135x_read(chip, IRQ_F_REG, &reg);
-				if(value.intval != (reg & 0x1)){
-					pr_debug("skj smb135x value:%d, reg:%d\n",
-						value.intval,reg);					
-					value.intval=reg & 0x1;
-					chip->usb_psy->set_property(chip->usb_psy,
-						POWER_SUPPLY_PROP_PRESENT, &value);
+			rc = smb135x_read(chip, CMD_CHG_REG, &reg);			
+			if(0==(reg & 0x1)){				
+				int reg_present;
+				rc = smb135x_read(chip, IRQ_E_REG, &reg);
+				if(0==rc){
+					reg_present = (0==(reg & 0x50)) || (0==(reg & 0x05));
+					reg_present = reg_present & 0x1;
+					if(value.intval != reg_present){
+						pr_debug("skj smb135x value:%d, reg:%d\n",
+							value.intval,reg);					
+						value.intval=reg_present;
+						chip->usb_psy->set_property(chip->usb_psy,
+							POWER_SUPPLY_PROP_PRESENT, &value);
+					}
 				}
 			}
 		}
 	}	
 	
-	if(0==ldo13){
-		ldo13=regulator_get(0,"8916_l13");
-		if(IS_ERR(ldo13)){
-			printk("get ldo13 err =%p\n",ldo13);
-			ldo13=0;
-		}
-	}
-	if(0!=ldo13){
-		if(0!=charger_present && 0==ldo13_is_on){
-			ldo13_is_on=1;
-			printk("regulator_enable ldo13");
-			rc=regulator_enable(ldo13);
-			if(rc<0){
-				printk("regulator_enable ldo13 err=%d\n",(int)rc);
-			}
-		}
-		if(0==charger_present && 0!=ldo13_is_on){
-			ldo13_is_on=0;
-			printk("regulator_disable ldo13");
-			rc=regulator_disable(ldo13);
-			if(rc<0){
-				printk("regulator_disable ldo13 err=%d\n",(int)rc);
-			}			
-		}
-	}
 	
 	schedule_delayed_work(&chip->temp_monitor_work,msecs_to_jiffies(CHG_CHECK_PERIOD_MS));
 }
@@ -4455,6 +4491,7 @@ static int smb135x_main_charger_probe(struct i2c_client *client,
 
 	INIT_DELAYED_WORK(&chip->wireless_insertion_work,
 					wireless_insertion_work);
+	INIT_DELAYED_WORK(&chip->temp_monitor_work, smb135x_temp_monitor_work);
 
 	mutex_init(&chip->path_suspend_lock);
 	mutex_init(&chip->current_change_lock);
@@ -4560,13 +4597,25 @@ static int smb135x_main_charger_probe(struct i2c_client *client,
 			chip->dc_present, chip->usb_present);
 
 	// by skj
-	INIT_DELAYED_WORK(&chip->temp_monitor_work, smb135x_temp_monitor_work);
 	schedule_delayed_work(&chip->temp_monitor_work,msecs_to_jiffies(CHG_CHECK_PERIOD_MS));
 	chip->cfg_warm_bat_decidegc=45;
 	chip->cfg_cool_bat_decidegc=0;
 	chip->health=POWER_SUPPLY_HEALTH_GOOD;
 	wake_lock_init(&smb135x_wakelock, WAKE_LOCK_SUSPEND,"smb135x_wakelock");
 	msm_otg_recover_vbus();
+	ldo13=regulator_get(0,"8916_l13");
+	if(IS_ERR_OR_NULL(ldo13)){
+		printk("get ldo13 err =%p\n",ldo13);
+		ldo13=0;
+	}
+	if(0!=ldo13){
+		ldo13_on=1;
+		printk("regulator_enable ldo13");
+		rc=regulator_enable(ldo13);
+		if(rc<0){
+			printk("regulator_enable ldo13 err=%d\n",(int)rc);
+		}
+	}	
 	return 0;
 
 unregister_dc_psy:
@@ -4704,6 +4753,7 @@ static int smb135x_suspend(struct device *dev)
 	struct smb135x_chg *chip = i2c_get_clientdata(client);
 	int i, rc;
 
+	cancel_delayed_work_sync(&chip->temp_monitor_work);
 	/* no suspend resume activities for parallel charger */
 	if (chip->parallel_charger)
 		return 0;
@@ -4736,7 +4786,20 @@ static int smb135x_suspend(struct device *dev)
 	mutex_lock(&chip->irq_complete);
 	chip->resume_completed = false;
 	mutex_unlock(&chip->irq_complete);
-
+	
+	rc = smb135x_masked_write(chip, CFG_E_REG, HVDCP_5_9_BIT, 0);
+		if (rc < 0)
+			dev_err(chip->dev,
+				"Couldn't request for 5V rc=%d\n", rc);	
+	if(0!=ldo13 && 0!=ldo13_on){
+		ldo13_on=0;
+		printk("regulator_enable ldo13");
+		rc=regulator_disable(ldo13);
+		if(rc<0){
+			printk("regulator_enable ldo13 err=%d\n",(int)rc);
+		}
+	}	
+	
 	return 0;
 }
 
@@ -4782,6 +4845,20 @@ static int smb135x_resume(struct device *dev)
 	} else {
 		mutex_unlock(&chip->irq_complete);
 	}
+	if(0!=ldo13 && 0==ldo13_on){
+		ldo13_on=1;
+		printk("regulator_enable ldo13");
+		rc=regulator_enable(ldo13);
+		if(rc<0){
+			printk("regulator_enable ldo13 err=%d\n",(int)rc);
+		}
+	}		
+	rc = smb135x_masked_write(chip, CFG_E_REG, HVDCP_5_9_BIT, HVDCP_5_9_BIT);
+		if (rc < 0)
+			dev_err(chip->dev,
+				"Couldn't request for 5V rc=%d\n", rc);	
+
+	schedule_delayed_work(&chip->temp_monitor_work,msecs_to_jiffies(CHG_CHECK_PERIOD_MS));
 	return 0;
 }
 

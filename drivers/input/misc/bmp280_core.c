@@ -34,7 +34,13 @@
 #endif
 
 /* add by shengweiguang begin */
+#include <linux/err.h>
 #include <linux/sensors.h>
+#include <linux/regulator/consumer.h>
+#define BMP280_VDD_MIN_UV	2000000
+#define BMP280_VDD_MAX_UV	3300000
+#define BMP280_VIO_MIN_UV	1750000
+#define BMP280_VIO_MAX_UV	1950000
 /* add by shengweiguang edn */
 
 #include "bmp280_core.h"
@@ -124,6 +130,12 @@ struct bmp_client_data {
 	*  1: success
 	*/
 	s8 selftest;
+/*add by shengweiguang for power manage begin*/
+	struct regulator *vio;
+	struct regulator *vdd;
+	bool power_enabled;
+	int sensor_work;
+/*add by shengweiguang for power manage end*/
 };
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
@@ -132,6 +144,7 @@ static void bmp_late_resume(struct early_suspend *h);
 #endif
 
 /* add by shengweiguang begin */
+static int bmp280_power_ctl(struct bmp_client_data *sensor, bool on);
 static struct sensors_classdev sensors_cdev = {
 	.name = "bmp280-pressure",
 	.vendor = "Bosch",
@@ -1235,11 +1248,14 @@ static ssize_t store_enable(struct device *dev,
 static int bmp_enable_set(struct sensors_classdev *sensors_cdev,
 						unsigned int enabled)
 {
+	int ret;
 	struct bmp_client_data *data = container_of(sensors_cdev,
 					struct bmp_client_data, cdev);
 	struct device *dev = data->dev;
 
 	enabled = enabled ? 1 : 0;
+
+	pr_err("SWG bmp280 bmp_enable_set <0x%x>\n", enabled);
 	mutex_lock(&data->lock);
 
 	if (data->enable == enabled) {
@@ -1250,18 +1266,36 @@ static int bmp_enable_set(struct sensors_classdev *sensors_cdev,
 	if (data->enable != enabled) {
 		if (enabled) {
 			#ifdef CONFIG_PM
-			bmp_enable(dev);
+			//bmp_enable(dev);modify by shengweiguang 
+			if(data->power_enabled==0)
+			{
+				(void)bmp280_power_ctl(data, true);
+				if (ret != 0)
+					pr_err("SWG bmp280 power ctl <true> failed !!!\n");
+				else
+					pr_err("SWG bmp280 power ctl <true> success !!!\n");
+			}
 			#endif
 			bmp_set_op_mode(data, \
 				BMP_VAL_NAME(NORMAL_MODE));
 			schedule_delayed_work(&data->work,
 				msecs_to_jiffies(data->delay));
+			data->sensor_work = 1; // add by shengweiguang
 		} else{
 			cancel_delayed_work_sync(&data->work);
 			bmp_set_op_mode(data, \
 				BMP_VAL_NAME(SLEEP_MODE));
+			data->sensor_work = 0; //add by shengweiguang
 			#ifdef CONFIG_PM
-			bmp_disable(dev);
+			//bmp_disable(dev); modify by shengweiguang 
+			if(data->power_enabled==1)
+			{
+				ret = bmp280_power_ctl(data, false);
+				if (ret != 0)
+					pr_err("SWG bmp280 power ctl <false> failed !!!\n");
+				else
+					pr_err("SWG bmp280 power ctl <false> success !!!\n");
+			}
 			#endif
 		}
 		data->enable = enabled;
@@ -1280,6 +1314,8 @@ static ssize_t store_enable(struct device *dev,
 	int status = kstrtoul(buf, 10, &enable);
 	if (status < 0)
 		return status;
+	
+	pr_err("SWG bmp280 store_enable <0x%lu>\n", enable);
 	
 	status = bmp_enable_set(&data->cdev, enable);
 	if (status < 0)
@@ -1476,19 +1512,24 @@ static void bmp_work_func(struct work_struct *work)
 	u32 j1 = jiffies;
 	u32 pressure;
 	int status;
+	ktime_t timestamp;
 
 	mutex_lock(&client_data->lock);
 	status = bmp_get_pressure(client_data, &pressure);
 	mutex_unlock(&client_data->lock);
 	if (status == 0) {
 /* modify by shengweiguang begin */
+		timestamp = ktime_get_boottime();
 		//input_event(client_data->input, EV_MSC, MSC_RAW, pressure);
 		input_report_abs(client_data->input, ABS_PRESSURE, pressure);
+		input_event(client_data->input, EV_SYN, SYN_TIME_SEC, ktime_to_timespec(timestamp).tv_sec);
+		input_event(client_data->input, EV_SYN, SYN_TIME_NSEC, ktime_to_timespec(timestamp).tv_nsec);
 /* modify by shengweiguagn end */
 		input_sync(client_data->input);
 	}
 
 	schedule_delayed_work(&client_data->work, delay-(jiffies-j1));
+	client_data->sensor_work = 1; // add by shengweiguang
 }
 
 /*!
@@ -1588,6 +1629,128 @@ static int bmp_init_client(struct bmp_client_data *data)
 	return status;
 }
 
+
+/* add by shengweiguang begin */
+static int bmp280_power_init(struct bmp_client_data *sensor)
+{
+	int ret = 0;
+
+	sensor->vdd = regulator_get(sensor->dev, "vdd");
+	if (IS_ERR(sensor->vdd)) {
+		ret = PTR_ERR(sensor->vdd);
+		dev_err(sensor->dev,
+			"Regulator get failed vdd ret=%d\n", ret);
+		return ret;
+	}
+
+	if (regulator_count_voltages(sensor->vdd) > 0) {
+		ret = regulator_set_voltage(sensor->vdd, BMP280_VDD_MIN_UV,
+					   BMP280_VDD_MAX_UV);
+		if (ret) {
+			dev_err(sensor->dev,
+				"Regulator set_vtg failed vdd ret=%d\n", ret);
+			goto reg_vdd_put;
+		}
+	}
+
+	sensor->vio = regulator_get(sensor->dev, "vio");
+	if (IS_ERR(sensor->vio)) {
+		ret = PTR_ERR(sensor->vio);
+		dev_err(sensor->dev,
+			"Regulator get failed vio ret=%d\n", ret);
+		goto reg_vdd_set_vtg;
+	}
+
+	if (regulator_count_voltages(sensor->vio) > 0) {
+		ret = regulator_set_voltage(sensor->vio,
+				BMP280_VIO_MIN_UV,
+				BMP280_VIO_MAX_UV);
+		if (ret) {
+			dev_err(sensor->dev,
+			"Regulator set_vtg failed vio ret=%d\n", ret);
+			goto reg_vio_put;
+		}
+	}
+
+	return 0;
+
+reg_vio_put:
+	regulator_put(sensor->vio);
+reg_vdd_set_vtg:
+	if (regulator_count_voltages(sensor->vdd) > 0)
+		regulator_set_voltage(sensor->vdd, 0, BMP280_VDD_MAX_UV);
+reg_vdd_put:
+	regulator_put(sensor->vdd);
+	return ret;
+}
+/*
+static int bmp280_power_deinit(struct bmp_client_data *sensor)
+{
+	int ret = 0;
+
+	if (regulator_count_voltages(sensor->vio) > 0)
+		regulator_set_voltage(sensor->vio, 0, BMP280_vio_MAX_UV);
+	regulator_put(sensor->vio);
+	if (regulator_count_voltages(sensor->vdd) > 0)
+		regulator_set_voltage(sensor->vdd, 0, BMP280_VDD_MAX_UV);
+	regulator_put(sensor->vdd);
+	return ret;
+}
+*/
+
+static int bmp280_power_ctl(struct bmp_client_data *sensor, bool on)
+{
+	int rc = 0;
+
+	if (on && (!sensor->power_enabled)) {
+		pr_info("SWG bmp280_power_ctl on\n");
+		rc = regulator_enable(sensor->vdd);
+		if (rc) {
+			dev_err(sensor->dev,
+				"Regulator vdd enable failed rc=%d\n", rc);
+			return rc;
+		}
+
+		rc = regulator_enable(sensor->vio);
+		if (rc) {
+			dev_err(sensor->dev,
+				"Regulator vio enable failed rc=%d\n", rc);
+			regulator_disable(sensor->vdd);
+			return rc;
+		}
+
+		sensor->power_enabled = true;
+	} else if (!on && (sensor->power_enabled)) {
+
+		pr_info("SWG bmp280_power_ctl off\n");
+
+		rc = regulator_disable(sensor->vdd);
+		if (rc) {
+			dev_err(sensor->dev,
+				"Regulator vdd disable failed rc=%d\n", rc);
+			return rc;
+		}
+
+		rc = regulator_disable(sensor->vio);
+		if (rc) {
+			dev_err(sensor->dev,
+				"Regulator vio disable failed rc=%d\n", rc);
+			rc = regulator_enable(sensor->vdd);
+			return rc;
+		}
+
+		sensor->power_enabled = false;
+	} else {
+		dev_warn(sensor->dev,
+				"Ignore power status change from %d to %d\n",
+				on, sensor->power_enabled);
+		pr_info("SWG Ignore power status change from %d to %d\n", on, sensor->power_enabled);
+	}
+	return rc;
+}
+/* add by shengweiguang end */
+
+
 /*!
  * @brief probe bmp sensor
  *
@@ -1603,19 +1766,9 @@ int bmp_probe(struct device *dev, struct bmp_data_bus *data_bus)
 	struct bmp_client_data *data;
 	int err = 0;
 
-
 	if (!dev || !data_bus) {
 		err = -EINVAL;
 		goto exit;
-	}
-
-	/* check chip id */
-	err = bmp_check_chip_id(data_bus);
-	if (err) {
-		PERR("Bosch Sensortec Device not found, chip id mismatch!\n");
-		goto exit;
-	} else {
-		PNOTICE("Bosch Sensortec Device %s detected.\n", BMP_NAME);
 	}
 
 	data = kzalloc(sizeof(struct bmp_client_data), GFP_KERNEL);
@@ -1627,6 +1780,27 @@ int bmp_probe(struct device *dev, struct bmp_data_bus *data_bus)
 	dev_set_drvdata(dev, data);
 	data->data_bus = *data_bus;
 	data->dev = dev;
+
+/*add by shengweiguang begin */
+	/* power init */
+	err = bmp280_power_init(data);
+	if (err != 0){
+		pr_err("SWG <bmp280_power_init> error !!!!\n ");
+		goto exit_free;
+	}
+	err = bmp280_power_ctl(data, true);
+	if (err != 0)
+		pr_err("SWG bmp280 probe <bmp280_power_ctl on> error !!!!\n ");
+/*add by shengweiguang end */
+
+	/* check chip id */
+	err = bmp_check_chip_id(data_bus);
+	if (err) {
+		PERR("Bosch Sensortec Device not found, chip id mismatch!\n");
+		goto exit_free;
+	} else {
+		PNOTICE("Bosch Sensortec Device %s detected.\n", BMP_NAME);
+	}
 
 	/* Initialize the BMP chip */
 	err = bmp_init_client(data);
@@ -1663,6 +1837,9 @@ int bmp_probe(struct device *dev, struct bmp_data_bus *data_bus)
 	data->early_suspend.resume = bmp_late_resume;
 	register_early_suspend(&data->early_suspend);
 #endif
+	err = bmp280_power_ctl(data, false);
+	if (err != 0)
+		pr_err("SWG bmp280 probe <bmp280_power_ctl off> error !!!!\n ");
 
 	PINFO("Succesfully probe sensor %s\n", BMP_NAME);
 	return 0;
@@ -1713,6 +1890,27 @@ EXPORT_SYMBOL(bmp_remove);
 */
 int bmp_disable(struct device *dev)
 {
+	int ret = 0;
+	struct bmp_client_data *data = 
+		(struct bmp_client_data *)dev_get_drvdata(dev);
+
+//	mutex_lock(&data->lock);
+	if (data->enable && (data->sensor_work==1)) {
+		cancel_delayed_work_sync(&data->work);
+		bmp_set_op_mode(data, BMP_VAL_NAME(SLEEP_MODE));
+		data->sensor_work = 0; // add by shengweiguang 
+	}
+//	mutex_unlock(&data->lock);
+	
+	if(data->power_enabled==1)
+	{
+		ret = bmp280_power_ctl(data, false);
+		if (ret != 0)
+			pr_err("SWG bmp280 power ctl <false> failed !!!\n");
+		else
+			pr_err("SWG bmp280 power ctl <false> success !!!\n");
+	}
+	
 	return 0;
 }
 EXPORT_SYMBOL(bmp_disable);
@@ -1727,6 +1925,28 @@ EXPORT_SYMBOL(bmp_disable);
 */
 int bmp_enable(struct device *dev)
 {
+	int ret = 0;
+	struct bmp_client_data *data = 
+		(struct bmp_client_data *)dev_get_drvdata(dev);
+
+	if(data->power_enabled==0)
+	{
+		(void)bmp280_power_ctl(data, true);
+		if (ret != 0)
+			pr_err("SWG bmp280 power ctl <true> failed !!!\n");
+		else
+			pr_err("SWG bmp280 power ctl <true> success !!!\n");
+	}
+	
+//	mutex_lock(&data->lock);
+	if (data->enable && (data->sensor_work==0)) {
+		bmp_set_op_mode(data, BMP_VAL_NAME(NORMAL_MODE));
+		schedule_delayed_work(&data->work,
+			msecs_to_jiffies(data->delay));
+		data->sensor_work = 1; // add by shengweiguang
+	}
+//	mutex_unlock(&data->lock);
+
 	return 0;
 }
 EXPORT_SYMBOL(bmp_enable);
@@ -1744,11 +1964,13 @@ static void bmp_early_suspend(struct early_suspend *h)
 {
 	struct bmp_client_data *data =
 		container_of(h, struct bmp_client_data, early_suspend);
-
+	pr_err("SWG bmp280 bmp_early_suspend !!!\n");
+	
 	mutex_lock(&data->lock);
-	if (data->enable) {
+	if (data->enable && (data->power_enabled==1)) {
 		cancel_delayed_work_sync(&data->work);
 		bmp_set_op_mode(data, BMP_VAL_NAME(SLEEP_MODE));
+		data->sensor_work = 0; // add by shengweiguang
 		#ifdef CONFIG_PM
 		(void) bmp_disable(data->dev);
 		#endif
@@ -1767,15 +1989,17 @@ static void bmp_late_resume(struct early_suspend *h)
 {
 	struct bmp_client_data *data =
 		container_of(h, struct bmp_client_data, early_suspend);
+	pr_err("SWG bmp280 bmp_late_resume !!!\n");
 
 	mutex_lock(&data->lock);
-	if (data->enable) {
+	if (data->enable && (data->power_enabled==0)) {
 		#ifdef CONFIG_PM
 		(void) bmp_enable(data->dev);
 		#endif
 		bmp_set_op_mode(data, BMP_VAL_NAME(NORMAL_MODE));
 		schedule_delayed_work(&data->work,
 			msecs_to_jiffies(data->delay));
+		data->sensor_work = 1; // add by shengweiguang
 	}
 	mutex_unlock(&data->lock);
 }

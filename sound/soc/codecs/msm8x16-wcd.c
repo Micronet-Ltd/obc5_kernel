@@ -220,6 +220,56 @@ static void *modem_state_notifier;
 
 static struct snd_soc_codec *registered_codec;
 
+DEFINE_MUTEX(pa_sw_mutex); // by skj
+
+static int speak_ctrl_pa_sw_hw_last;
+
+static void speak_ctrl_pa_sw_hw(int enable)
+{
+	mutex_lock(&pa_sw_mutex);	
+	printk("speak_ctrl_pa_sw_hw enable=%d\n",enable);
+	if(0==enable){		
+		if(gpio_is_valid(ext_spk_pa_gpio))
+			gpio_direction_output(ext_spk_pa_gpio, 0);
+		mdelay(10);
+		if(gpio_is_valid(hp_spk_switch_gpio))
+			gpio_direction_output(hp_spk_switch_gpio, 0);
+	}else{
+		if(gpio_is_valid(hp_spk_switch_gpio))
+			gpio_direction_output(hp_spk_switch_gpio, 1);
+		mdelay(10);
+		if(gpio_is_valid(ext_spk_pa_gpio))
+			gpio_direction_output(ext_spk_pa_gpio, 1);
+	}
+	mutex_unlock(&pa_sw_mutex);
+}
+
+static void pa_sw_on_delay_work(struct work_struct *work) 
+{
+	if(0==speak_ctrl_pa_sw_hw_last)
+		speak_ctrl_pa_sw_hw(0);
+	else
+		speak_ctrl_pa_sw_hw(1);
+}
+
+static void speak_ctrl_pa_sw(int enable)
+{
+	static int init_done=0;
+	static struct delayed_work work_pa_sw_on_delay;	
+	
+	speak_ctrl_pa_sw_hw_last=enable;
+	if(0==init_done){
+		init_done=1;
+		INIT_DELAYED_WORK(&work_pa_sw_on_delay, pa_sw_on_delay_work);
+	}
+	if(0==speak_ctrl_pa_sw_hw_last){
+		cancel_delayed_work_sync(&work_pa_sw_on_delay);
+		speak_ctrl_pa_sw_hw(0);
+	}else{
+		schedule_delayed_work(&work_pa_sw_on_delay,msecs_to_jiffies(30));
+	}	
+}
+
 void msm8x16_wcd_spk_ext_pa_cb(
 		int (*codec_spk_ext_pa)(struct snd_soc_codec *codec,
 			int enable), struct snd_soc_codec *codec)
@@ -1298,21 +1348,14 @@ static int msm8x16_wcd_ext_spk_set(struct snd_kcontrol *kcontrol,
 
 	switch (ucontrol->value.integer.value[0]) {
 		case 0:
-			if(gpio_is_valid(ext_spk_pa_gpio))
-				gpio_direction_output(ext_spk_pa_gpio, 0);
 			current_ext_spk_pa_state = false;
-			if(gpio_is_valid(hp_spk_switch_gpio))
-				gpio_direction_output(hp_spk_switch_gpio, 0);
-			pr_debug("howard set ext pa gpio 0\n");
+			speak_ctrl_pa_sw(0);
+			pr_info("howard set ext pa gpio 0\n");
 			break;
 		case 1:
-			if(gpio_is_valid(hp_spk_switch_gpio))
-				gpio_direction_output(hp_spk_switch_gpio, 1);
-			//msleep(50);
-			if(gpio_is_valid(ext_spk_pa_gpio))
-				gpio_direction_output(ext_spk_pa_gpio, 1);
 			current_ext_spk_pa_state = true;
-			pr_debug("howard set ext pa gpio 1\n");
+			speak_ctrl_pa_sw(1);
+			pr_info("howard set ext pa gpio 1\n");
 			break;
 		default:
 			return -EINVAL;
@@ -3159,10 +3202,7 @@ static int msm8x16_wcd_hph_pa_event(struct snd_soc_dapm_widget *w,
 		//Added by lichuangchuang for ext_spk pa pop (8916) SW00077296 2014/09/26 begin
 		if ( (w->shift == 5) || (w->shift == 4)){
 			if(current_ext_spk_pa_state){
-				if(gpio_is_valid(ext_spk_pa_gpio))
-					gpio_direction_output(ext_spk_pa_gpio, 1);
-				if(gpio_is_valid(hp_spk_switch_gpio))
-					gpio_direction_output(hp_spk_switch_gpio, 1);
+				speak_ctrl_pa_sw(1);
 			}
 		}
 		//Added by lichuangchuang for ext_spk pa pop (8916) SW00077296 2014/09/26 end
@@ -3173,10 +3213,7 @@ static int msm8x16_wcd_hph_pa_event(struct snd_soc_dapm_widget *w,
 		//Added by lichuangchuang for ext_spk pa pop (8916) SW00077296 2014/09/22 begin
 		if ( (w->shift == 5) || (w->shift == 4)){
 			if(current_ext_spk_pa_state){
-				if(gpio_is_valid(ext_spk_pa_gpio))
-					gpio_direction_output(ext_spk_pa_gpio, 0);
-				if(gpio_is_valid(hp_spk_switch_gpio))
-					gpio_direction_output(hp_spk_switch_gpio, 0);
+				speak_ctrl_pa_sw(0);
 			}
 		}
 		//Added by lichuangchuang for ext_spk pa pop (8916) SW00077296 2014/09/22 end

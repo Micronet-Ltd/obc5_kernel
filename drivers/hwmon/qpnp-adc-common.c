@@ -1596,7 +1596,7 @@ int32_t qpnp_adc_btm_scaler(struct qpnp_vadc_chip *chip,
 	/* btm high temperature correspondes to low voltage threshold */
 	*high_threshold = low_output;
 
-	pr_debug("high_volt:%d, low_volt:%d\n", *high_threshold,
+	pr_notice("high_volt:%d, low_volt:%d\n", *high_threshold,
 				*low_threshold);
 	return 0;
 }

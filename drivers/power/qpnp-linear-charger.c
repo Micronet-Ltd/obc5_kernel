@@ -650,7 +650,6 @@ static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 	if (!!chip->charger_disabled == !!disabled)
 		goto skip;
 
-    pr_notice("%s: %d\n", __func__, enable);
 	reg_val = !!disabled ? CHG_FORCE_BATT_ON : CHG_ENABLE;
 	rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,
 				CHG_EN_MASK, reg_val);
@@ -661,7 +660,11 @@ static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 	}
 skip:
 	chip->charger_disabled = disabled;
-	return rc;
+    if (reason & THERMAL) {
+        pr_notice("%s: [%x, %d]\n", __func__, chip->charger_disabled, enable); 
+    }
+
+    return rc;
 }
 
 static int qpnp_lbc_is_batt_present(struct qpnp_lbc_chip *chip)
@@ -1279,7 +1282,7 @@ static void qpnp_lbc_set_appropriate_current(struct qpnp_lbc_chip *chip)
 		chg_current = min(chg_current,
 			chip->thermal_mitigation[chip->therm_lvl_sel]);
 
-	pr_debug("setting charger current %d mA\n", chg_current);
+	pr_notice("setting charger current %d mA\n", chg_current);
 	qpnp_lbc_ibatmax_set(chip, chg_current);
 }
 
@@ -1316,7 +1319,9 @@ static void qpnp_batt_external_power_changed(struct power_supply *psy)
 		} else {
 			chip->usb_psy_ma = current_ma;
 			qpnp_lbc_set_appropriate_current(chip);
-			qpnp_lbc_charger_enable(chip, CURRENT, 1);
+            if (!chip->bat_is_warm) {
+                qpnp_lbc_charger_enable(chip, CURRENT, 1);
+            }
 		}
 	}
 
@@ -1371,11 +1376,13 @@ static int qpnp_lbc_system_temp_level_set(struct qpnp_lbc_chip *chip,
 		 * If previously highest value was selected charging must have
 		 * been disabed. Enable charging.
 		 */
-		rc = qpnp_lbc_charger_enable(chip, THERMAL, 1);
-		if (rc < 0) {
-			dev_err(chip->dev,
-				"Failed to enable charging rc %d\n", rc);
-		}
+        if (!chip->bat_is_warm) {
+    		rc = qpnp_lbc_charger_enable(chip, THERMAL, 1);
+    		if (rc < 0) {
+    			dev_err(chip->dev,
+    				"Failed to enable charging rc %d\n", rc);
+    		}
+        }
 	}
 out:
 	spin_unlock_irqrestore(&chip->ibat_change_lock, flags);
@@ -1383,7 +1390,7 @@ out:
 }
 
 #define MIN_COOL_TEMP		-300
-#define MAX_WARM_TEMP		1000
+#define MAX_WARM_TEMP		450 //1000
 #define HYSTERISIS_DECIDEGC	20
 
 static int qpnp_lbc_configure_jeita(struct qpnp_lbc_chip *chip,
@@ -1505,6 +1512,7 @@ static int qpnp_batt_power_set_property(struct power_supply *psy,
 			if (chip->cfg_float_charge)
 				break;
 			/* Disable charging */
+            pr_notice("battery full\n");
 			rc = qpnp_lbc_charger_enable(chip, SOC, 0);
 			if (rc)
 				pr_err("Failed to disable charging rc=%d\n",
@@ -1530,12 +1538,14 @@ static int qpnp_batt_power_set_property(struct power_supply *psy,
 			}
 			break;
 		case POWER_SUPPLY_STATUS_CHARGING:
-			chip->chg_done = false;
-			pr_debug("resuming charging by bms\n");
-			if (!chip->cfg_disable_vbatdet_based_recharge)
-				qpnp_lbc_vbatdet_override(chip, OVERRIDE_0);
+            if (!chip->bat_is_warm) {
+    			chip->chg_done = false;
+    			pr_debug("resuming charging by bms\n");
+    			if (!chip->cfg_disable_vbatdet_based_recharge)
+    				qpnp_lbc_vbatdet_override(chip, OVERRIDE_0);
 
-			qpnp_lbc_charger_enable(chip, SOC, 1);
+    			qpnp_lbc_charger_enable(chip, SOC, 1);
+            }
 			break;
 		case POWER_SUPPLY_STATUS_DISCHARGING:
 			chip->chg_done = false;
@@ -1558,11 +1568,13 @@ static int qpnp_batt_power_set_property(struct power_supply *psy,
 		pr_debug("power supply changed batt_psy\n");
 		break;
 	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
-		chip->cfg_charging_disabled = !(val->intval);
-		rc = qpnp_lbc_charger_enable(chip, USER,
-						!chip->cfg_charging_disabled);
-		if (rc)
-			pr_err("Failed to disable charging rc=%d\n", rc);
+        if (!(chip->bat_is_warm && val->intval)) {
+    		chip->cfg_charging_disabled = !(val->intval);
+    		rc = qpnp_lbc_charger_enable(chip, USER,
+    						!chip->cfg_charging_disabled);
+    		if (rc)
+    			pr_err("Failed to disable charging rc=%d\n", rc);
+        }
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MIN:
 		qpnp_lbc_vinmin_set(chip, val->intval / 1000);
@@ -1673,7 +1685,6 @@ static int qpnp_lbc_parallel_charging_config(struct qpnp_lbc_chip *chip,
 
 	if (enable) {
 		/* Prevent sleep until charger is configured */
-        pr_notice("%s: enable charge\n", __func__);
 		chip->ichg_now = QPNP_LBC_IBATMAX_MIN;
 		qpnp_lbc_ibatmax_set(chip, chip->ichg_now);
 		qpnp_lbc_charger_enable(chip, PARALLEL, 1);
@@ -1794,6 +1805,7 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
 	pr_debug("temp = %d state = %s\n", temp,
 			state == ADC_TM_WARM_STATE ? "warm" : "cool");
 
+#if 0
 	if (state == ADC_TM_WARM_STATE) {
 		if (temp >= chip->cfg_warm_bat_decidegc) {
 			/* Normal to warm */
@@ -1841,6 +1853,52 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
 					ADC_TM_HIGH_LOW_THR_ENABLE;
 		}
 	}
+#else
+    if (temp >= chip->cfg_warm_bat_decidegc) {
+        pr_notice("reach warm[%d] wait for normal %d", temp, chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC);
+        /* Warm to normal*/
+        bat_warm = 1;
+        bat_cool = 0;
+        chip->adc_param.low_temp = chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC;
+        chip->adc_param.high_temp = chip->cfg_warm_bat_decidegc;
+        chip->adc_param.state_request = ADC_TM_COOL_THR_ENABLE;
+    } else if (temp > chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC) {
+        /* Normal to warm or cool*/
+        pr_notice("reach normal[%d] wait for cool or warm %d, %d", temp, chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC, chip->cfg_warm_bat_decidegc);
+        bat_warm = 1;
+        bat_cool = 0;
+
+        chip->adc_param.low_temp = chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC;
+        chip->adc_param.high_temp = chip->cfg_warm_bat_decidegc;
+        chip->adc_param.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
+    } else if (temp < chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC) {
+        /* Normal to warm or cool*/
+        pr_notice("reach normal[%d] wait for cool or warm %d, %d", temp, chip->cfg_cool_bat_decidegc, chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC);
+        bat_warm = 0;
+        bat_cool = 1;
+
+        chip->adc_param.low_temp = chip->cfg_cool_bat_decidegc;
+        chip->adc_param.high_temp = chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC;
+        chip->adc_param.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
+    } else if (temp <= chip->cfg_cool_bat_decidegc) {
+        /* Cool to normal*/
+        pr_notice("reach cool[%d] wait for warm %d", temp, chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC);
+        bat_warm = 0;
+        bat_cool = 1;
+        chip->adc_param.low_temp = chip->cfg_cool_bat_decidegc;
+        chip->adc_param.high_temp = chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC;
+        chip->adc_param.state_request = ADC_TM_WARM_THR_ENABLE;
+    } else {
+        /* Normal to warm or cool*/
+        pr_notice("reach normal [%d] wait for cool or warm %d, %d", temp, chip->cfg_cool_bat_decidegc, chip->cfg_warm_bat_decidegc);
+        bat_warm = 0;
+        bat_cool = 0;
+        chip->adc_param.low_temp = chip->cfg_cool_bat_decidegc;
+        chip->adc_param.high_temp = chip->cfg_warm_bat_decidegc;
+        chip->adc_param.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
+    }
+     
+#endif
 
 	if (chip->bat_is_cool ^ bat_cool || chip->bat_is_warm ^ bat_warm) {
 		spin_lock_irqsave(&chip->ibat_change_lock, flags);
@@ -1849,9 +1907,18 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
 		qpnp_lbc_set_appropriate_vddmax(chip);
 		qpnp_lbc_set_appropriate_current(chip);
 		spin_unlock_irqrestore(&chip->ibat_change_lock, flags);
+        if (!!chip->charger_disabled) {
+            if (!chip->bat_is_warm) {
+                qpnp_lbc_charger_enable(chip, THERMAL, 1); 
+            }
+        } else {
+            if (chip->bat_is_warm) {
+                qpnp_lbc_charger_enable(chip, THERMAL, 0); 
+            }
+        }
 	}
 
-	pr_debug("warm %d, cool %d, low = %d deciDegC, high = %d deciDegC\n",
+	pr_debug("post warm %d, cool %d, low = %d deciDegC, high = %d deciDegC\n",
 			chip->bat_is_warm, chip->bat_is_cool,
 			chip->adc_param.low_temp, chip->adc_param.high_temp);
 
@@ -2009,11 +2076,13 @@ static int qpnp_lbc_usb_path_init(struct qpnp_lbc_chip *chip)
 		 * Enable charging explictly,
 		 * because not sure the default behavior.
 		 */
-		reg_val = CHG_ENABLE;
-		rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,
-					CHG_EN_MASK, reg_val);
-		if (rc)
-			pr_err("Failed to enable charger rc=%d\n", rc);
+        if (!chip->bat_is_warm) {
+            reg_val = CHG_ENABLE; 
+            rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,
+                        CHG_EN_MASK, reg_val);
+            if (rc)
+                pr_err("Failed to enable charger rc=%d\n", rc);
+        }
 	}
 
 	return rc;
@@ -2350,7 +2419,9 @@ static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
 			 * charging gets enabled on USB insertion
 			 * irrespective of battery SOC above resume_soc.
 			 */
-			qpnp_lbc_charger_enable(chip, SOC, 1);
+            if (!chip->bat_is_warm) {
+                qpnp_lbc_charger_enable(chip, SOC, 1);
+            }
 		}
 
 		pr_debug("Updating usb_psy PRESENT property\n");
@@ -2529,9 +2600,11 @@ static irqreturn_t qpnp_lbc_vbatdet_lo_irq_handler(int irq, void *_chip)
 	 * Battery has fallen below the vbatdet threshold and it is
 	 * time to resume charging.
 	 */
-	rc = qpnp_lbc_charger_enable(chip, SOC, 1);
-	if (rc)
-		pr_err("Failed to enable charging\n");
+//    if (!chip->bat_is_warm) {
+    	rc = qpnp_lbc_charger_enable(chip, SOC, 1);
+    	if (rc)
+    		pr_err("Failed to enable charging\n");
+//    }
 
 	return IRQ_HANDLED;
 }
@@ -3108,7 +3181,11 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 				pr_err("request ADC error rc=%d\n", rc);
 				goto unregister_batt;
 			}
-		}
+            if (get_prop_batt_temp(chip) >= chip->cfg_warm_bat_decidegc) {
+                chip->bat_is_warm = 1;
+                qpnp_lbc_charger_enable(chip, THERMAL, 0); 
+            }
+        }
 	}
 
 	rc = qpnp_lbc_bat_if_configure_btc(chip);
@@ -3150,7 +3227,7 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 			pr_err("Couldn't create lbc_config debug file\n");
 	}
 
-	pr_info("Probe chg_dis=%d bpd=%d usb=%d batt_pres=%d batt_volt=%d soc=%d\n",
+	pr_notice("chg_dis=%d bpd=%d usb=%d batt_pres=%d batt_volt=%d soc=%d\n",
 			chip->cfg_charging_disabled,
 			chip->cfg_bpd_detection,
 			qpnp_lbc_is_usb_chg_plugged_in(chip),

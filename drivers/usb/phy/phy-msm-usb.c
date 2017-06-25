@@ -10,6 +10,7 @@
  * GNU General Public License for more details.
  *
  */
+#define pr_fmt(fmt)	"CHG: %s: " fmt, __func__
 
 #include <linux/module.h>
 #include <linux/device.h>
@@ -1654,7 +1655,7 @@ phcd_retry:
 		motg->ui_enabled = 1;
 		enable_irq(motg->irq);
 	}
-	wake_unlock(&motg->wlock);
+    wake_unlock(&motg->wlock);
 
 	dev_dbg(phy->dev, "LPM caps = %lu flags = %lu\n",
 			motg->caps, motg->lpm_flags);
@@ -2574,6 +2575,7 @@ static void msm_otg_chg_check_timer_func(unsigned long data)
 {
 	struct msm_otg *motg = (struct msm_otg *) data;
 	struct usb_otg *otg = motg->phy.otg;
+    uint32_t psc;
 
 	if (atomic_read(&motg->in_lpm) ||
 		!test_bit(B_SESS_VLD, &motg->inputs) ||
@@ -2583,13 +2585,17 @@ static void msm_otg_chg_check_timer_func(unsigned long data)
 		return;
 	}
 
-	if ((readl_relaxed(USB_PORTSC) & PORTSC_LS) == PORTSC_LS) {
+    psc = readl_relaxed(USB_PORTSC);
+	if ((psc & PORTSC_LS) == PORTSC_LS) {
 		dev_dbg(otg->phy->dev, "DCP is detected as SDP\n");
 		msm_otg_dbg_log_event(&motg->phy, "DCP IS DETECTED AS SDP",
 				otg->phy->state, 0);
 		set_bit(B_FALSE_SDP, &motg->inputs);
 		queue_work(motg->otg_wq, &motg->sm_work);
-	}
+    } else if (((psc & PORTSC_LS) == (PORTSC_LS & (~PORTSC_LS_DM))) && (psc & PORTSC_SUSP_MASK)) {
+        pr_notice("j-state same as port idle %d\n", motg->chg_type);
+        msm_otg_set_power(otg->phy, IDEV_ACA_CHG_MAX); 
+    }
 }
 
 static bool msm_chg_aca_detect(struct msm_otg *motg)
@@ -3109,6 +3115,7 @@ static void msm_chg_detect_work(struct work_struct *w)
 		 * Notify the charger type to power supply
 		 * owner as soon as we determine the charger.
 		 */
+        pr_notice("ch type %d\n", motg->chg_type);
 		if (motg->chg_type == USB_DCP_CHARGER &&
 			motg->ext_chg_opened) {
 				init_completion(&motg->ext_chg_wait);
@@ -4714,6 +4721,12 @@ static int otg_power_set_property_usb(struct power_supply *psy,
 	/* The ONLINE property reflects if usb has enumerated */
 	case POWER_SUPPLY_PROP_ONLINE:
 		motg->online = val->intval;
+        if (motg->online) {
+            wake_lock(&motg->chg_wlock);
+        } else {
+            wake_unlock(&motg->chg_wlock);
+        }
+        pr_notice("POWER_SUPPLY_PROP_ONLINE %u\n", motg->online);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 		motg->voltage_max = val->intval;
@@ -5774,6 +5787,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 	if (ret)
 		dev_dbg(&pdev->dev, "MHL can not be supported\n");
 	wake_lock_init(&motg->wlock, WAKE_LOCK_SUSPEND, "msm_otg");
+    wake_lock_init(&motg->chg_wlock, WAKE_LOCK_SUSPEND, "msm_otg_chg");
 	msm_otg_init_timer(motg);
 	INIT_WORK(&motg->sm_work, msm_otg_sm_work);
 	INIT_DELAYED_WORK(&motg->chg_work, msm_chg_detect_work);
@@ -5978,7 +5992,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 	if (motg->pdata->phy_dvdd_always_on)
 		motg->caps |= ALLOW_BUS_SUSPEND_WITHOUT_REWORK;
 
-	wake_lock(&motg->wlock);
+    wake_lock(&motg->wlock);
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
 
@@ -6052,6 +6066,7 @@ free_irq:
 	free_irq(motg->irq, motg);
 destroy_wlock:
 	wake_lock_destroy(&motg->wlock);
+	wake_lock_destroy(&motg->chg_wlock);
 	clk_disable_unprepare(motg->core_clk);
 	msm_hsusb_ldo_enable(motg, USB_PHY_REG_OFF);
 	destroy_workqueue(motg->otg_wq);
@@ -6139,6 +6154,7 @@ static int msm_otg_remove(struct platform_device *pdev)
 	device_init_wakeup(&pdev->dev, 0);
 	pm_runtime_disable(&pdev->dev);
 	wake_lock_destroy(&motg->wlock);
+    wake_lock_destroy(&motg->chg_wlock);
 
 	msm_hsusb_mhl_switch_enable(motg, 0);
 	if (motg->phy_irq)

@@ -89,11 +89,15 @@ ifeq ($(CONFIG_BOSCH_BMA2X2_ENABLE_INT2),y)
 endif
 #add by shengweiguang 20150609 begin
 obj-$(CONFIG_SENSORS_AP3216C)		+= ap321xx.o
-obj-$(CONFIG_SENSORS_RPR0410)	+= rpr0400_driver.o
-obj-$(CONFIG_SENSORS_BMP280)      += bmp280_core.o bmp280.o
-obj-$(CONFIG_SENSORS_BMP280_I2C)  += bmp280_i2c.o
-obj-$(CONFIG_SENSORS_BMP280_SPI)  += bmp280_spi.o
+obj-$(CONFIG_SENSORS_RPR0410)		+= rpr0400_driver.o
+obj-$(CONFIG_SENSORS_BMP280)      	+= bmp280_core.o bmp280.o
+obj-$(CONFIG_SENSORS_BMP280_I2C)  	+= bmp280_i2c.o
+obj-$(CONFIG_SENSORS_BMP280_SPI)  	+= bmp280_spi.o
 ifeq ($(CONFIG_SENSORS_BMP280_I2C),y)
 	EXTRA_CFLAGS += -DBMP_USE_BASIC_I2C_FUNC
 endif
 #add by shengweiguang 20150609 end
+#add by zj 20160711  for add ltr559 light and promixy sensor
+obj-$(CONFIG_SENSORS_LTR559)	      	+= ltr559.o
+obj-$(CONFIG_SENSORS_BMC156)	      	+= bmc156/
+#add by zj 20160711 end
