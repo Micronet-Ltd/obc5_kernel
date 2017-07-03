@@ -383,6 +383,10 @@
 		interrupts = <&msm_gpio 49 1>, <&msm_gpio 69 1>;
 		status = "okay";
 	};
+	suspend_tm {
+		compatible = "suspend-timeout";
+		status = "okay";
+	};
 };
 
 /* add by shengweiguang for usb gadget 20150817 begin */
