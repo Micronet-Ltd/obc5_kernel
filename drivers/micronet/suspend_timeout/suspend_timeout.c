@@ -156,17 +156,6 @@ static ssize_t ignition_tm_write(struct file * file, const char __user * buf, si
     val = simple_strtol(output, 0, 10);
     pr_info("output %s; val %d\n", output, val);
 
-    if(MAX_SUSPEND_TM < val)
-    {
-    	val = -1;
-    }
-    else if(!isdigit(output[0]))
-    {
-        pr_err("suspend timeout min = %u ms, max = %u, input %d\n", MIN_SUSPEND_TM, MAX_SUSPEND_TM, val);
-        val = 0;
-        //set to user 0 //return -EINVAL;
-    }
-    
     spin_lock_irqsave(&data->dev_lock, data->lock_flags); 
     data->to_ign_db = val;
     data->to_ign = data->to_ign_db;
@@ -270,17 +259,6 @@ static ssize_t suspend_tm_write(struct file * file, const char __user * buf, siz
     val = simple_strtol(output, 0, 10);
     pr_info("output %s; val %d\n", output, val);
 
-    if(MAX_SUSPEND_TM < val)
-    {
-    	val = -1;
-    }
-    else if(!isdigit(output[0]))//from db
-    {
-        pr_err("suspend timeout min = %u ms, max = %u, input %d\n", MIN_SUSPEND_TM, MAX_SUSPEND_TM, val);
-        val = 0;
-        //set to user 0 //return -EINVAL;
-    }
-    
     spin_lock_irqsave(&data->dev_lock, data->lock_flags); 
     data->to_db = val;
     data->to_sp = data->to_db;
@@ -354,7 +332,7 @@ static ssize_t suspend_tm_show(struct device* dev, struct device_attribute *attr
     value = data->to_db;
     spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
 
-    if(MAX_SUSPEND_TM <= value)//for PowerManagerService 
+    if(MAX_SUSPEND_TM == value)//for PowerManagerService
     {
         value = -1;
     }
@@ -400,7 +378,7 @@ static ssize_t ignition_tm_show(struct device* dev, struct device_attribute *att
     value = data->to_ign_db;
     spin_unlock_irqrestore(&data->dev_lock, data->lock_flags);
 
-    if(MAX_SUSPEND_TM <= value)//for PowerManagerService 
+    if(MAX_SUSPEND_TM == value)//for PowerManagerService
     {
         value = -1;
     }
