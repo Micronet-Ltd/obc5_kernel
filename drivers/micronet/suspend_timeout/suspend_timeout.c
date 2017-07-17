@@ -32,6 +32,7 @@
 
 #define MIN_SUSPEND_TM  10000//from Android
 #define MAX_SUSPEND_TM  0x7FFFFFFF//from Android
+#define MIN_SHUTDOWN_TM  15000//from Android
 
 #define SP_TM_BIT       1  
 #define IGN_TM_BIT      2
@@ -62,13 +63,27 @@ struct suspend_tm_data {
 };
 ///////////////////////
 ///////////////
-static int32_t test_timeout(uint32_t val)
+static uint32_t test_change_timeout(uint32_t val)
 {
-    if((-1 != (int32_t)val) && (MIN_SUSPEND_TM > val || MAX_SUSPEND_TM < val) )
-    {
-        return 0;
-    }
-    return 1;
+	uint32_t newv = val;
+
+    if(MAX_SUSPEND_TM < val)
+    	newv = MAX_SUSPEND_TM;
+    else if(MIN_SUSPEND_TM > val)
+    	newv = MIN_SUSPEND_TM;
+
+    return newv;
+}
+static uint32_t test_change_timeout_shd(uint32_t val)
+{
+	uint32_t newv = val;
+
+    if(MAX_SUSPEND_TM < val)
+    	newv = -1;
+    else if(MIN_SHUTDOWN_TM > val)
+    	newv = MIN_SHUTDOWN_TM;
+
+    return newv;
 }
 ////
 static int32_t ignition_tm_open(struct inode *inode, struct file *file)
@@ -141,7 +156,11 @@ static ssize_t ignition_tm_write(struct file * file, const char __user * buf, si
     val = simple_strtol(output, 0, 10);
     pr_info("output %s; val %d\n", output, val);
 
-    if(!isdigit(output[0]))//from db
+    if(MAX_SUSPEND_TM < val)
+    {
+    	val = -1;
+    }
+    else if(!isdigit(output[0]))
     {
         pr_err("suspend timeout min = %u ms, max = %u, input %d\n", MIN_SUSPEND_TM, MAX_SUSPEND_TM, val);
         val = 0;
@@ -251,7 +270,11 @@ static ssize_t suspend_tm_write(struct file * file, const char __user * buf, siz
     val = simple_strtol(output, 0, 10);
     pr_info("output %s; val %d\n", output, val);
 
-    if(!isdigit(output[0]))//from db
+    if(MAX_SUSPEND_TM < val)
+    {
+    	val = -1;
+    }
+    else if(!isdigit(output[0]))//from db
     {
         pr_err("suspend timeout min = %u ms, max = %u, input %d\n", MIN_SUSPEND_TM, MAX_SUSPEND_TM, val);
         val = 0;
@@ -298,27 +321,11 @@ static ssize_t suspend_tm_set(struct device *dev, struct device_attribute *attr,
     uint32_t value;
     struct suspend_tm_data* data = container_of(dev, struct suspend_tm_data, dev_f);
 
-//    if(!isdigit(buf[0])) 
-//    {
-//        if ((buf[0] != '-') || count < 2 || (buf[1] != '1'))//enabled '-1' only 
-//        {
-//            pr_err("error input %s\n", buf);
-//            return -EINVAL;
-//        }
-//    }
     value = simple_strtol(buf, 0, 10); 
     pr_info("%d (count %u)\n", value, (uint32_t)count);
 
-    //-1(never) or from 15000, 30000, 60000, 120000, 300000, 600000, 1800000
-    if(0 == test_timeout(value))
-    {
-        pr_err("suspend timeout min = %u ms, max = %u, input %d\n", MIN_SUSPEND_TM, MAX_SUSPEND_TM, value);
-        return -EINVAL;
-    }
-    if(-1 == (int32_t)value) 
-    {
-        value = MAX_SUSPEND_TM;//for PowerManagerService
-    }
+    value = test_change_timeout(value);
+
     if(data->to_db == value)
         return count;
 
@@ -362,16 +369,8 @@ static ssize_t ignition_tm_set(struct device *dev, struct device_attribute *attr
     value = simple_strtol(buf, 0, 10); 
     pr_info("%d (count %u)\n", value, (uint32_t)count);
 
-    //-1(never) in menu: 15000, 30000, 60000, 120000, 300000, 600000, 1800000
-    if(0 == test_timeout(value))
-    {
-        pr_err("suspend timeout min = %u ms, max = %u, input %d\n", MIN_SUSPEND_TM, MAX_SUSPEND_TM, value);
-        return -EINVAL;
-    }
-    if(-1 == (int32_t)value) 
-    {
-        value = MAX_SUSPEND_TM;//for PowerManagerService
-    }
+    value = test_change_timeout_shd(value);
+
     if(data->to_ign_db == value)
         return count;
 
