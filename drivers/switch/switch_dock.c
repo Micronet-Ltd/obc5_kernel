@@ -110,7 +110,7 @@ static inline int freq2pattern(int freq)
 
 static void dock_switch_work_func(struct work_struct *work) 
 {
-	struct dock_switch_device *ds  = container_of(work, struct dock_switch_device, work);
+	struct dock_switch_device *ds = container_of(work, struct dock_switch_device, work);
     int val;
 	
     if (e_dock_type_basic != ds->dock_type) {
@@ -119,29 +119,51 @@ static void dock_switch_work_func(struct work_struct *work)
         val = freq2pattern(val);
         if (BASIC_PATTERN == val) {
             ds->dock_type = (e_dock_type_unspecified == ds->dock_type)?e_dock_type_basic:e_dock_type_unspecified;
-            val = 0; 
-            pr_notice("%scradle attempt to be %splugged %lld\n", (e_dock_type_basic == ds->dock_type)?"basic ":"", (e_dock_type_unspecified == ds->dock_type)?"un ":" ",
-                      ktime_to_ms(ktime_get()));
-        } else if (SMART_PATTERN == val && e_dock_type_smart != ds->dock_type) {
-            ds->dock_type = e_dock_type_smart;
-            val = SWITCH_DOCK;
-            disable_irq_nosync(ds->dock_irq);
-            disable_irq_wake(ds->dock_irq);
-            pr_notice("smart cradle plugged %lld\n", ktime_to_ms(ktime_get()));
+            pr_notice("%scradle attempt to be (un)plugged %lld\n", (e_dock_type_basic == ds->dock_type)?"basic ":"", ktime_to_ms(ktime_get()));
+            if (gpio_is_valid(ds->dock_pin)) {
+                // pin function is basic dock detect
+                pr_notice("enable dock detect function %lld\n", ktime_to_ms(ktime_get()));
+                gpio_direction_input(ds->dock_pin); 
+            }
+            // switch otg connector
+            if (gpio_is_valid(ds->usb_switch_pin)) {
+                pr_notice("switch usb connector %lld\n", ktime_to_ms(ktime_get()));
+                gpio_set_value(ds->usb_switch_pin, !!(ds->dock_active_l == gpio_get_value(ds->dock_pin)));
+            }
+            val = 0;
         } else if (e_dock_type_smart == ds->dock_type) {
+            val = SWITCH_DOCK;
             if (IG_HI_PATTERN == val) {
-                val = (SWITCH_DOCK | SWITCH_IGN);
+                val |= SWITCH_IGN;
                 pr_notice("ignition plugged %lld\n", ktime_to_ms(ktime_get()));
             } else if (IG_LOW_PATTERN == val) {
-                val = SWITCH_DOCK;
                 pr_notice("ignition unplugged %lld\n", ktime_to_ms(ktime_get()));
+            }
+        } else if (SMART_PATTERN == val) {
+            pr_notice("smart cradle attempt to be plugged %lld\n", ktime_to_ms(ktime_get()));
+            ds->dock_type = e_dock_type_smart;
+            val = SWITCH_DOCK;
+
+            // disable dock interrupts while smart cradle
+            if (ds->dock_irq) {
+                pr_notice("disable dock irq %lld\n", ktime_to_ms(ktime_get()));
+                disable_irq_nosync(ds->dock_irq);
+            }
+
+            if (gpio_is_valid(ds->dock_pin)) {
+                // pin function is smart cradle spkr switch
+                pr_notice("enable spkr switch function %lld\n", ktime_to_ms(ktime_get()));
+                gpio_direction_output(ds->dock_pin, 1);
+            }
+
+            // switch otg connector
+            if (gpio_is_valid(ds->usb_switch_pin)) {
+                pr_notice("switch usb connector %lld\n", ktime_to_ms(ktime_get()));
+                gpio_set_value(ds->usb_switch_pin, ds->dock_active_l);
             }
         }
     }
 
-    //pr_notice("pins[%d, %d]\n", ds->dock_pin, ds->ign_pin);
-    //pr_notice("irqs[%d, %d]\n", ds->dock_irq, ds->ign_irq);
-    //pr_notice("sched reason[%u]\n", ds->sched_irq);
     if (e_dock_type_basic == ds->dock_type) {
         if (gpio_is_valid(ds->dock_pin)) {
             if (ds->dock_active_l == gpio_get_value(ds->dock_pin) ) {
@@ -151,43 +173,34 @@ static void dock_switch_work_func(struct work_struct *work)
                 //pr_notice("dock disconnected\n");
                 ds->dock_type = e_dock_type_unspecified;
             }
-
-            if ((e_dock_type_unspecified == ds->dock_type) || (ds->sched_irq & SWITCH_DOCK)) {
-                //pr_notice("enable dock monitor\n");
-                ds->sched_irq &= ~SWITCH_DOCK;
-                if (gpio_is_valid(ds->usb_switch_pin)) {
-                    //pr_notice("switch usb\n");
-                    gpio_set_value(ds->usb_switch_pin, !!(ds->dock_active_l == gpio_get_value(ds->dock_pin)));
-                }
-                enable_irq(ds->dock_irq);
-            }
         }
 
         if (gpio_is_valid(ds->ign_pin)) {
             if (ds->ign_active_l == gpio_get_value(ds->ign_pin) ) {
-                //pr_notice("ignition connected\n");
                 val |= SWITCH_IGN;
-                wake_lock(&ds->wlock);
-            } else {
-                wake_unlock(&ds->wlock);
-                //pr_notice("ignition disconnected\n");
             }
-
-            if (ds->sched_irq & SWITCH_IGN) {
-                //pr_notice("enable ignition monitor\n");
-                ds->sched_irq &= ~SWITCH_IGN;
-                enable_irq(ds->ign_irq); 
-            }
-        }
-    } else if (e_dock_type_smart == ds->dock_type) {
-        if (ds->sched_irq & SWITCH_IGN) {
-            //pr_notice("enable ignition monitor\n");
-            ds->sched_irq &= ~SWITCH_IGN;
-            enable_irq(ds->ign_irq); 
         }
     }
 
+    // interrupts handled
+    if (ds->sched_irq & SWITCH_DOCK) {
+        //pr_notice("enable dock monitor\n");
+        ds->sched_irq &= ~SWITCH_DOCK;
+        enable_irq(ds->dock_irq);
+    }
+
+    if (ds->sched_irq & SWITCH_IGN) {
+        //pr_notice("enable ignition monitor\n");
+        ds->sched_irq &= ~SWITCH_IGN;
+        enable_irq(ds->ign_irq); 
+    }
+
 	if (ds->state != val) {
+        if (val & SWITCH_IGN) {
+            wake_lock(&ds->wlock);
+        } else {
+            wake_unlock(&ds->wlock);
+        }
 		ds->state = val;
 		switch_set_state(&ds->sdev, val);
 	}
@@ -345,7 +358,7 @@ static int dock_switch_probe(struct platform_device *pdev)
 					pr_err("failure to set direction of the gpio[%d]\n", ds->dock_pin);
 					break;
 				}
-				gpio_export(ds->dock_pin, 0);
+				gpio_export(ds->dock_pin, 1);
 				ds->dock_irq = gpio_to_irq(ds->dock_pin);
 				if (ds->dock_irq < 0) {
 					pr_err("failure to request gpio[%d] irq\n", ds->dock_pin);
