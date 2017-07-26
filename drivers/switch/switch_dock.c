@@ -34,7 +34,8 @@ extern int32_t gpio_in_register_notifier(struct notifier_block *nb);
 #define SWITCH_DOCK	(1 << 0)
 #define SWITCH_IGN  (1 << 1)
 
-#define DEBOUNCE_INTERIM  100
+#define DEBOUNCE_INTERIM  400
+#define PATERN_INTERIM    100
 #define BASIC_PATTERN     0
 #define SMART_PATTERN     1000
 #define IG_HI_PATTERN     500
@@ -86,11 +87,13 @@ static int wait_for_stable_signal(int pin, int interim)
         } while (ktime_to_ms(ktime_get()) < timer);
     }
 
+    pr_notice("detcted %d pulses %lld\n", pulses, ktime_to_ms(ktime_get()));
     return pulses;
 }
 
 static inline int pulses2freq(int pulses, int interim)
 {
+    pr_notice("%d HZ %lld\n", 1000 * pulses / interim, ktime_to_ms(ktime_get()));
     return 1000 * pulses / interim;
 }
 
@@ -111,15 +114,24 @@ static inline int freq2pattern(int freq)
 static void dock_switch_work_func(struct work_struct *work) 
 {
 	struct dock_switch_device *ds = container_of(work, struct dock_switch_device, work);
-    int val;
+    int val = 0;
 	
     if (e_dock_type_basic != ds->dock_type) {
         val = wait_for_stable_signal(ds->ign_pin, DEBOUNCE_INTERIM);
-        val = pulses2freq(val, DEBOUNCE_INTERIM);
+        val = pulses2freq(val, PATERN_INTERIM);
         val = freq2pattern(val);
+        pr_notice("pattern %d detected %lld\n", val, ktime_to_ms(ktime_get()));
         if (BASIC_PATTERN == val) {
-            ds->dock_type = (e_dock_type_unspecified == ds->dock_type)?e_dock_type_basic:e_dock_type_unspecified;
-            pr_notice("%scradle attempt to be (un)plugged %lld\n", (e_dock_type_basic == ds->dock_type)?"basic ":"", ktime_to_ms(ktime_get()));
+            val = 0;
+            if (e_dock_type_smart == ds->dock_type) {
+                pr_notice("smart cradle unplagged %lld\n", ktime_to_ms(ktime_get()));
+                ds->dock_type = e_dock_type_unspecified;
+                ds->sched_irq |= SWITCH_DOCK;
+            } else {
+                pr_notice("basic cradle plugged %lld\n", ktime_to_ms(ktime_get()));
+                ds->dock_type = e_dock_type_basic;
+            }
+
             if (gpio_is_valid(ds->dock_pin)) {
                 // pin function is basic dock detect
                 pr_notice("enable dock detect function %lld\n", ktime_to_ms(ktime_get()));
@@ -130,7 +142,6 @@ static void dock_switch_work_func(struct work_struct *work)
                 pr_notice("switch usb connector %lld\n", ktime_to_ms(ktime_get()));
                 gpio_set_value(ds->usb_switch_pin, !!(ds->dock_active_l == gpio_get_value(ds->dock_pin)));
             }
-            val = 0;
         } else if (e_dock_type_smart == ds->dock_type) {
             val = SWITCH_DOCK;
             if (IG_HI_PATTERN == val) {
@@ -148,6 +159,7 @@ static void dock_switch_work_func(struct work_struct *work)
             if (ds->dock_irq) {
                 pr_notice("disable dock irq %lld\n", ktime_to_ms(ktime_get()));
                 disable_irq_nosync(ds->dock_irq);
+                ds->sched_irq &= ~SWITCH_DOCK;
             }
 
             if (gpio_is_valid(ds->dock_pin)) {
@@ -167,10 +179,9 @@ static void dock_switch_work_func(struct work_struct *work)
     if (e_dock_type_basic == ds->dock_type) {
         if (gpio_is_valid(ds->dock_pin)) {
             if (ds->dock_active_l == gpio_get_value(ds->dock_pin) ) {
-                //pr_notice("dock connected\n");
                 val |= SWITCH_DOCK;
             } else {
-                //pr_notice("dock disconnected\n");
+                pr_notice("basic cradle unplagged %lld\n", ktime_to_ms(ktime_get()));
                 ds->dock_type = e_dock_type_unspecified;
             }
         }
