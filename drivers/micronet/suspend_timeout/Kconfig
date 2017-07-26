@@ -1,16 +1,7 @@
-menuconfig MICRONET_OBC
-	bool "Micronet OBC drivers"
-	---help---
-	  Say Y here to get Micronet OBC drivers.
-
-
-if MICRONET_OBC
 
 config MICRONET_SUSPEND
 	tristate "Micronet suspend timeout"
 	help
 	  Micronet OBC suspend timeout Driver.
 
-
-endif
 		
