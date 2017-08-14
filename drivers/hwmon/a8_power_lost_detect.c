@@ -40,6 +40,7 @@
 #include <linux/syscalls.h>
 #include <linux/fcntl.h>
 //#include <linux/cpufreq.h>
+#include <linux/wakelock.h>
 
 #undef DEBUG_POWER_LOST
 #define DEBUG_POWER_LOST 1
@@ -93,6 +94,7 @@ struct a8_power_lost_detect_info {
     int ign_active_lvl;
     int ign_change_irq;
     struct delayed_work ign_change_work;
+    struct wake_lock wlock;
 };
 
 static ssize_t a8_power_lost_show_name(struct device *dev, struct device_attribute *attr, char *buf)
@@ -361,6 +363,7 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
             pr_notice("shutdown display %lld\n", ktime_to_ms(ktime_get()));
             power_lost_notify(1, 0);
             timer = 0;
+            wake_lock(&pwrl->wlock);
         } else {
             pr_notice("power restored %lld\n", timer);
             spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
@@ -386,6 +389,7 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
                 spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
             }
             enable_irq(pwrl->pwr_lost_irq);
+            wake_unlock(&pwrl->wlock);
             return;
         }
     } else if (pwrl->pwr_lost_ps == e_pwrl_display_off) {
@@ -611,6 +615,7 @@ static int a8_power_lost_detect_probe(struct platform_device *pdev)
 
     do {
         spin_lock_init(&pwrl->pwr_lost_lock);
+        wake_lock_init(&pwrl->wlock, WAKE_LOCK_SUSPEND, "a8_power_lost_wait_lock");
 
 #if defined (DEBUG_POWER_LOST)
         snprintf(pwrl->attr_ps.name, sizeof(pwrl->attr_ps.name) - 1, "ps");
@@ -907,6 +912,7 @@ static int a8_power_lost_detect_remove(struct platform_device *pdev)
 
     cancel_delayed_work(&pwrl->pwr_lost_work);
     disable_irq_nosync(pwrl->pwr_lost_irq);
+    wake_lock_destroy(&pwrl->wlock);
 //    if (device_may_wakeup(&pdev->dev))
 //        disable_irq_wake(pwrl->pwr_lost_irq);
     device_wakeup_disable(&pdev->dev);
