@@ -355,6 +355,10 @@
 		qcom,ext-spk-amp-gpio = <&msm_gpio 16 0>;
 		qcom,hp-spk-switch-gpio = <&msm_gpio 3 0>;
 	};
+	virtual_leds {
+		compatible = "virtual-leds";
+		status = "okay";
+	};
 /*
 	a8_power_lost_hm {
 		compatible = "a8-hm-power-lost";
