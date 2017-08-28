@@ -143,17 +143,21 @@ static void dock_switch_work_func(struct work_struct *work)
                 gpio_set_value(ds->usb_switch_pin, !!(ds->dock_active_l == gpio_get_value(ds->dock_pin)));
             }
         } else if (e_dock_type_smart == ds->dock_type) {
-            val = SWITCH_DOCK;
             if (IG_HI_PATTERN == val) {
-                val |= SWITCH_IGN;
+                val = (SWITCH_DOCK | SWITCH_IGN);
                 pr_notice("ignition plugged %lld\n", ktime_to_ms(ktime_get()));
             } else if (IG_LOW_PATTERN == val) {
+                val = SWITCH_DOCK;
                 pr_notice("ignition unplugged %lld\n", ktime_to_ms(ktime_get()));
             }
-        } else if (SMART_PATTERN == val) {
+        } else if (SMART_PATTERN == val || IG_HI_PATTERN == val || IG_LOW_PATTERN == val) {
             pr_notice("smart cradle attempt to be plugged %lld\n", ktime_to_ms(ktime_get()));
             ds->dock_type = e_dock_type_smart;
-            val = SWITCH_DOCK;
+            if (IG_HI_PATTERN == val) {
+                val = SWITCH_DOCK | SWITCH_IGN; 
+            } else {
+                val = SWITCH_DOCK; 
+            }
 
             // disable dock interrupts while smart cradle
             if (ds->dock_irq) {
