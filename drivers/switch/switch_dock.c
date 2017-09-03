@@ -88,6 +88,7 @@ static int wait_for_stable_signal(int pin, int interim)
             }
         } while (ktime_to_ms(ktime_get()) < timer);
     }
+    pulses >>= 1;
 
     pr_notice("detcted %d pulses %lld\n", pulses, ktime_to_ms(ktime_get()));
     return pulses;
@@ -124,7 +125,7 @@ static void dock_switch_work_func(struct work_struct *work)
         val = pulses2freq(val, PATERN_INTERIM);
         val = freq2pattern(val);
         pr_notice("pattern %d detected [%lld]%lld\n", val, timer, ktime_to_ms(ktime_get()));
-        if (BASIC_PATTERN == val) {
+        if (BASIC_PATTERN == val /* temporary for debug purposes only && ds->ign_active_l != gpio_get_value(ds->ign_pin)*/) {
             val = 0;
             if (e_dock_type_smart == ds->dock_type) {
                 pr_notice("smart cradle unplagged %lld\n", ktime_to_ms(ktime_get()));
