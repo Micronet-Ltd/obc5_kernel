@@ -34,7 +34,7 @@ extern int32_t gpio_in_register_notifier(struct notifier_block *nb);
 #define SWITCH_DOCK	(1 << 0)
 #define SWITCH_IGN  (1 << 1)
 
-#define DEBOUNCE_INTERIM  400
+#define DEBOUNCE_INTERIM  500
 #define PATERN_INTERIM    100
 #define BASIC_PATTERN     0
 #define SMART_PATTERN     1000
@@ -79,9 +79,11 @@ static int wait_for_stable_signal(int pin, int interim)
     timer = ktime_to_ms(ktime_get()) + interim;
 
     if (gpio_is_valid(pin)) {
+//        pr_notice("start %d pulses %lld\n", gpio_get_value(pin), ktime_to_ms(ktime_get()));
         do {
             if (state != gpio_get_value(pin)) {
                 state ^= 1;
+//                pr_notice("detcted %d pulses %lld\n", pulses, ktime_to_ms(ktime_get()));
                 pulses++;
             }
         } while (ktime_to_ms(ktime_get()) < timer);
@@ -114,13 +116,14 @@ static inline int freq2pattern(int freq)
 static void dock_switch_work_func(struct work_struct *work) 
 {
 	struct dock_switch_device *ds = container_of(work, struct dock_switch_device, work);
+    long long timer = ktime_to_ms(ktime_get());
     int val = 0;
 	
     if (e_dock_type_basic != ds->dock_type) {
-        val = wait_for_stable_signal(ds->ign_pin, DEBOUNCE_INTERIM);
+        val = wait_for_stable_signal(ds->ign_pin, DEBOUNCE_INTERIM + PATERN_INTERIM);
         val = pulses2freq(val, PATERN_INTERIM);
         val = freq2pattern(val);
-        pr_notice("pattern %d detected %lld\n", val, ktime_to_ms(ktime_get()));
+        pr_notice("pattern %d detected [%lld]%lld\n", val, timer, ktime_to_ms(ktime_get()));
         if (BASIC_PATTERN == val) {
             val = 0;
             if (e_dock_type_smart == ds->dock_type) {
@@ -128,7 +131,7 @@ static void dock_switch_work_func(struct work_struct *work)
                 ds->dock_type = e_dock_type_unspecified;
                 ds->sched_irq |= SWITCH_DOCK;
             } else {
-                pr_notice("basic cradle plugged %lld\n", ktime_to_ms(ktime_get()));
+                pr_notice("basic cradle attempt to be plugged %lld\n", ktime_to_ms(ktime_get()));
                 ds->dock_type = e_dock_type_basic;
             }
 
@@ -183,6 +186,7 @@ static void dock_switch_work_func(struct work_struct *work)
     if (e_dock_type_basic == ds->dock_type) {
         if (gpio_is_valid(ds->dock_pin)) {
             if (ds->dock_active_l == gpio_get_value(ds->dock_pin) ) {
+                pr_notice("basic cradle plagged %lld\n", ktime_to_ms(ktime_get()));
                 val |= SWITCH_DOCK;
             } else {
                 pr_notice("basic cradle unplagged %lld\n", ktime_to_ms(ktime_get()));
