@@ -107,7 +107,7 @@ static inline int freq2pattern(int freq)
         return BASIC_PATTERN;
     } else if (freq <= IG_LOW_PATTERN && HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN) < freq) {
         return IG_LOW_PATTERN;
-    } else if (freq <= IG_HI_PATTERN && HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) < freq) {
+    } else if (freq <= HYST_PATTERN(IG_HI_PATTERN, SMART_PATTERN) && HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) < freq) {
         return IG_HI_PATTERN;
     }
 
@@ -124,8 +124,8 @@ static void dock_switch_work_func(struct work_struct *work)
         val = wait_for_stable_signal(ds->ign_pin, DEBOUNCE_INTERIM + PATERN_INTERIM);
         val = pulses2freq(val, PATERN_INTERIM);
         val = freq2pattern(val);
-        pr_notice("pattern %d detected [%lld]%lld\n", val, timer, ktime_to_ms(ktime_get()));
-        if (BASIC_PATTERN == val /* temporary for debug purposes only && ds->ign_active_l != gpio_get_value(ds->ign_pin)*/) {
+        pr_notice("pattern[%d, %d] [%lld]%lld\n", val, gpio_get_value(ds->ign_pin), timer, ktime_to_ms(ktime_get()));
+        if (BASIC_PATTERN == val /* temporary for debug purposes only */&& ds->ign_active_l != gpio_get_value(ds->ign_pin)) {
             val = 0;
             if (e_dock_type_smart == ds->dock_type) {
                 pr_notice("smart cradle unplagged %lld\n", ktime_to_ms(ktime_get()));
@@ -173,7 +173,7 @@ static void dock_switch_work_func(struct work_struct *work)
             if (gpio_is_valid(ds->dock_pin)) {
                 // pin function is smart cradle spkr switch
                 pr_notice("enable spkr switch function %lld\n", ktime_to_ms(ktime_get()));
-                gpio_direction_output(ds->dock_pin, 1);
+                //gpio_direction_output(ds->dock_pin, 1);
             }
 
             // switch otg connector
