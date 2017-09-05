@@ -356,6 +356,12 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
     val |= pwrl->dbg_lvl;
 #endif
 
+    if (pwrl->pwr_lost_off_delay <= 0) {
+        pwrl->pwr_lost_ps = e_pwrl_unspecified;
+        enable_irq(pwrl->pwr_lost_irq);
+        return;
+    }
+
     if (pwrl->pwr_lost_ps == e_pwrl_unspecified) {
         if (pwrl->pwr_lost_pin_level == val) {
             pwrl->pwr_lost_ps = e_pwrl_display_off;
