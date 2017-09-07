@@ -21,6 +21,7 @@
 #include <linux/wakelock.h>
 
 #include <linux/notifier.h>
+#include <linux/power_supply.h>
 
 #if defined  (CONFIG_PRODUCT_A3001)
 static int32_t gpio_in_register_notifier(struct notifier_block *nb)
@@ -69,6 +70,7 @@ struct dock_switch_device {
     int		virt_gpio_offset;
     int     virt_init;
     enum e_dock_type dock_type;
+    struct power_supply *usb_psy;
 };
 
 static int wait_for_stable_signal(int pin, int interim)
@@ -119,6 +121,7 @@ static void dock_switch_work_func(struct work_struct *work)
 	struct dock_switch_device *ds = container_of(work, struct dock_switch_device, work);
     long long timer = ktime_to_ms(ktime_get());
     int val = 0;
+    union power_supply_propval prop = {0,};
 	
     if (e_dock_type_basic != ds->dock_type) {
         val = wait_for_stable_signal(ds->ign_pin, DEBOUNCE_INTERIM + PATERN_INTERIM);
@@ -129,6 +132,10 @@ static void dock_switch_work_func(struct work_struct *work)
             val = 0;
             if (e_dock_type_smart == ds->dock_type) {
                 pr_notice("smart cradle unplagged %lld\n", ktime_to_ms(ktime_get()));
+                if (ds->usb_psy) {
+                    prop.intval = 0;
+                    ds->usb_psy->set_property(ds->usb_psy, POWER_SUPPLY_PROP_CHARGE_ENABLED, &prop);
+                }
                 ds->dock_type = e_dock_type_unspecified;
                 ds->sched_irq |= SWITCH_DOCK;
             } else {
@@ -153,10 +160,16 @@ static void dock_switch_work_func(struct work_struct *work)
             } else if (IG_LOW_PATTERN == val) {
                 val = SWITCH_DOCK;
                 pr_notice("ignition unplugged %lld\n", ktime_to_ms(ktime_get()));
+            } else {
+                val = ds->state;
             }
         } else if (SMART_PATTERN == val || IG_HI_PATTERN == val || IG_LOW_PATTERN == val) {
             pr_notice("smart cradle attempt to be plugged %lld\n", ktime_to_ms(ktime_get()));
             ds->dock_type = e_dock_type_smart;
+            if (ds->usb_psy) {
+                prop.intval = 1;
+                ds->usb_psy->set_property(ds->usb_psy, POWER_SUPPLY_PROP_CHARGE_ENABLED, &prop);
+            }
             if (IG_HI_PATTERN == val) {
                 val = SWITCH_DOCK | SWITCH_IGN; 
             } else {
@@ -172,8 +185,9 @@ static void dock_switch_work_func(struct work_struct *work)
 
             if (gpio_is_valid(ds->dock_pin)) {
                 // pin function is smart cradle spkr switch
-                pr_notice("enable spkr switch function %lld\n", ktime_to_ms(ktime_get()));
-                //gpio_direction_output(ds->dock_pin, 1);
+                //pr_notice("enable spkr switch function %lld\n", ktime_to_ms(ktime_get()));
+                //canceled as cause of hw design
+                gpio_direction_output(ds->dock_pin, 0);
             }
 
             // switch otg connector
@@ -204,13 +218,13 @@ static void dock_switch_work_func(struct work_struct *work)
 
     // interrupts handled
     if (ds->sched_irq & SWITCH_DOCK) {
-        //pr_notice("enable dock monitor\n");
+//        pr_notice("enable dock monitor\n");
         ds->sched_irq &= ~SWITCH_DOCK;
         enable_irq(ds->dock_irq);
     }
 
     if (ds->sched_irq & SWITCH_IGN) {
-        //pr_notice("enable ignition monitor\n");
+//        pr_notice("enable ignition monitor\n");
         ds->sched_irq &= ~SWITCH_IGN;
         enable_irq(ds->ign_irq); 
     }
@@ -222,6 +236,7 @@ static void dock_switch_work_func(struct work_struct *work)
             wake_unlock(&ds->wlock);
         }
 		ds->state = val;
+//        pr_notice("notify dock state [%d] %lld\n", ds->state, ktime_to_ms(ktime_get()));
 		switch_set_state(&ds->sdev, val);
 	}
 }
@@ -267,7 +282,7 @@ static irqreturn_t dock_switch_irq_handler(int irq, void *arg)
 {
 	struct dock_switch_device *ds = (struct dock_switch_device *)arg;
 
-    //pr_notice("pins[%d]\n", irq);
+//    pr_notice("pins[%d]\n", irq);
     disable_irq_nosync(irq);
 
     if (irq == ds->dock_irq) {
@@ -349,7 +364,9 @@ static int dock_switch_probe(struct platform_device *pdev)
 				break;
 			}
 
-			INIT_WORK(&ds->work, dock_switch_work_func);
+            ds->usb_psy = power_supply_get_by_name("usb");
+
+            INIT_WORK(&ds->work, dock_switch_work_func);
             wake_lock_init(&ds->wlock, WAKE_LOCK_SUSPEND, "switch_dock_wait_lock");
 
 			ds->dock_pin = err;
