@@ -568,6 +568,7 @@ struct msm_otg {
 	rwlock_t dbg_lock;
 	char (buf[DEBUG_MAX_MSG])[DEBUG_MSG_LEN];   /* buffer */
     struct wake_lock chg_wlock;
+    int smart_cradle_plagged;
 };
 
 struct ci13xxx_platform_data {

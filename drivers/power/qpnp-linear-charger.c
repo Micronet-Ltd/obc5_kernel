@@ -1300,8 +1300,10 @@ static void qpnp_batt_external_power_changed(struct power_supply *psy)
 		chip->bms_psy = power_supply_get_by_name("bms");
 
 	if (qpnp_lbc_is_usb_chg_plugged_in(chip)) {
+        chip->usb_psy->get_property(chip->usb_psy, POWER_SUPPLY_PROP_CHARGE_ENABLED, &ret);
+        current_ma = ret.intval;
         chip->usb_psy->get_property(chip->usb_psy, POWER_SUPPLY_PROP_SCOPE, &ret);
-        if (POWER_SUPPLY_SCOPE_DEVICE == ret.intval) {
+        if (POWER_SUPPLY_SCOPE_DEVICE == ret.intval || current_ma) {
             chip->usb_psy->get_property(chip->usb_psy, POWER_SUPPLY_PROP_CURRENT_MAX, &ret);
             current_ma = ret.intval / 1000;
 

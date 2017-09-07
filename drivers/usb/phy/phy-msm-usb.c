@@ -2064,7 +2064,7 @@ static int msm_otg_set_power(struct usb_phy *phy, unsigned mA)
 	 * IDEV_CHG can be drawn irrespective of suspend/un-configured
 	 * states when CDP/ACA is connected.
 	 */
-	if (motg->chg_type == USB_SDP_CHARGER)
+	if (motg->smart_cradle_plagged || motg->chg_type == USB_SDP_CHARGER)
 		msm_otg_notify_charger(motg, mA);
 
 	return 0;
@@ -2601,6 +2601,7 @@ static void msm_otg_chg_check_timer_func(unsigned long data)
 	}
 
     psc = readl_relaxed(USB_PORTSC);
+    dev_notice(otg->phy->dev, "port status[%x]\n", psc);
 	if ((psc & PORTSC_LS) == PORTSC_LS) {
 		dev_dbg(otg->phy->dev, "DCP is detected as SDP\n");
 		msm_otg_dbg_log_event(&motg->phy, "DCP IS DETECTED AS SDP",
@@ -4724,6 +4725,9 @@ static int otg_power_get_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 		val->intval = otg_get_prop_usbin_voltage_now(motg);
 		break;
+    case POWER_SUPPLY_PROP_CHARGE_ENABLED:
+        val->intval = motg->smart_cradle_plagged;
+        break;
 	default:
 		return -EINVAL;
 	}
@@ -4804,6 +4808,14 @@ static int otg_power_set_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_HEALTH:
 		motg->usbin_health = val->intval;
 		break;
+    case POWER_SUPPLY_PROP_CHARGE_ENABLED: {
+        struct usb_otg *otg = motg->phy.otg;
+        motg->smart_cradle_plagged = val->intval;
+        if (otg) {
+            msm_otg_set_power(otg->phy, (motg->smart_cradle_plagged) ? IDEV_ACA_CHG_MAX : 0); 
+        }
+        break;
+    }
 	default:
 		return -EINVAL;
 	}
@@ -4820,7 +4832,8 @@ static int otg_power_property_is_writeable_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PRESENT:
 	case POWER_SUPPLY_PROP_ONLINE:
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
-	case POWER_SUPPLY_PROP_CURRENT_MAX:
+    case POWER_SUPPLY_PROP_CURRENT_MAX:
+    case POWER_SUPPLY_PROP_CHARGE_ENABLED:
 		return 1;
 	default:
 		break;
@@ -4842,6 +4855,7 @@ static enum power_supply_property otg_pm_power_props_usb[] = {
 	POWER_SUPPLY_PROP_SCOPE,
 	POWER_SUPPLY_PROP_TYPE,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+    POWER_SUPPLY_PROP_CHARGE_ENABLED,
 };
 
 const struct file_operations msm_otg_bus_fops = {
