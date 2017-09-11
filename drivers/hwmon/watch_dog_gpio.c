@@ -50,6 +50,8 @@ struct watch_dog_pin_info{
     unsigned long lock_flags;
     int suspend;
     int suspend_ind_a;
+    struct device *dev;
+    unsigned long awake_delay;
 };
 
 int proc_rf_kill_pin = -1;
@@ -231,6 +233,19 @@ static void watchdog_toggle_work(struct work_struct *work)
 
     if (0 != inf->suspend) {
         gpio_set_value(inf->toggle_pin, 0);
+        if (device_may_wakeup(inf->dev)) {
+            if (1 == inf->suspend) {
+                d = (unsigned long)ktime_to_ms(ktime_get());
+                if (d < inf->awake_delay) {
+                    pm_stay_awake(inf->dev);
+                    pr_notice("wait for cradle %lld\n", ktime_to_ms(ktime_get()));
+                    schedule_delayed_work(&inf->toggle_work, msecs_to_jiffies(inf->awake_delay - d));
+                    return;
+                }
+                pr_notice("relax %lld\n", ktime_to_ms(ktime_get())); 
+                pm_relax(inf->dev);
+            }
+        }
         return;
     }
 
@@ -352,6 +367,12 @@ static int watchdog_pin_probe(struct platform_device *op)
 	if(rc<0)
 		inf->low_delay=1000;	
 
+    inf->dev = dev;
+    rc = device_init_wakeup(dev, 1);
+    if (0 != rc) {
+        pr_err("failure init wake source\n"); 
+    }
+
 	dev_set_drvdata(dev, inf);
 
     spin_lock_init(&inf->rfkillpin_lock);
@@ -403,6 +424,10 @@ static int watchdog_pin_probe(struct platform_device *op)
 
 static int watchdog_pin_remove(struct platform_device *op)
 {
+//    struct watch_dog_pin_info *wdi = platform_get_drvdata(op);
+
+    if (device_may_wakeup(&op->dev))
+        device_wakeup_disable(&op->dev);
     return 0;
 }
 
@@ -410,19 +435,36 @@ static int watchdog_pin_prepare(struct device *dev)
 {
     struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
 
-	pr_notice("notify to mcu about suspend\n");
+	pr_notice("notify to mcu about suspend %lld\n", ktime_to_ms(ktime_get()));
 
     if (gpio_is_valid(wdi->toggle_pin)) {
         pr_notice("stop wd [%d]\n", wdi->state);
         spin_lock_irqsave(&wdi->rfkillpin_lock, wdi->lock_flags);
         wdi->suspend = 1;
+        if (wdi->awake_delay) {
+            wdi->awake_delay = 0;
+        } else {
+            wdi->awake_delay = 2 * wdi->high_delay + wdi->low_delay + ktime_to_ms(ktime_get()); 
+        }
         spin_unlock_irqrestore(&wdi->rfkillpin_lock, wdi->lock_flags);
-        schedule_delayed_work(&wdi->toggle_work, 0);	
+    }
+
+    if (gpio_is_valid(wdi->toggle_pin)) {
+        pr_notice("set toggle pin to low [%d] %lld\n", wdi->state, ktime_to_ms(ktime_get()));
+        gpio_set_value(wdi->toggle_pin, 0);
     }
 
 	if(gpio_is_valid(wdi->suspend_ind)){
+        pr_notice("notify to cradle about suspend %lld\n", ktime_to_ms(ktime_get()));
         gpio_set_value(wdi->suspend_ind, wdi->suspend_ind_a);
     }
+
+    if (wdi->awake_delay) {
+        pr_notice("schedule toggling %lld\n", ktime_to_ms(ktime_get()));
+        schedule_delayed_work(&wdi->toggle_work, 0);
+        return -1;
+    }
+
 
     return 0;
 }
@@ -431,13 +473,8 @@ static int watchdog_pin_suspend(struct device *dev)
 {
     struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
 
-    if (gpio_is_valid(wdi->toggle_pin)) {
-        pr_notice("notify to cradle about suspend[%d]\n", wdi->state);
-        gpio_set_value(wdi->toggle_pin, 0);
-    }
-
     if(gpio_is_valid(wdi->rf_kill_pin)){
-		pr_notice("shut down rf\n");
+		pr_notice("shut down rf %lld\n", ktime_to_ms(ktime_get()));
         gpio_set_value(wdi->rf_kill_pin, wdi->rf_state^1);
     }
 
@@ -449,7 +486,7 @@ static int watchdog_pin_resume(struct device *dev)
     struct watch_dog_pin_info *wdi = dev_get_drvdata(dev);
 
     if (gpio_is_valid(wdi->toggle_pin)) {
-        pr_notice("start wd [%d]\n", wdi->state);
+        pr_notice("start wd [%d] %lld\n", wdi->state, ktime_to_ms(ktime_get()));
         spin_lock_irqsave(&wdi->rfkillpin_lock, wdi->lock_flags);
         wdi->suspend = 0;
         spin_unlock_irqrestore(&wdi->rfkillpin_lock, wdi->lock_flags);
@@ -457,12 +494,12 @@ static int watchdog_pin_resume(struct device *dev)
     }
 
 	if(gpio_is_valid(wdi->suspend_ind)){
-		pr_notice("notify to mcu about resume\n");
+		pr_notice("notify to mcu about resume %lld\n", ktime_to_ms(ktime_get()));
 		gpio_set_value(wdi->suspend_ind, wdi->suspend_ind_a^1);
 	}
 
     if(gpio_is_valid(wdi->rf_kill_pin)){
-		pr_notice("restore rf-kill %d\n", wdi->rf_state);
+		pr_notice("restore rf-kill [%d] %lld\n", wdi->rf_state, ktime_to_ms(ktime_get()));
         gpio_set_value(wdi->rf_kill_pin, wdi->rf_state);
     }
 
