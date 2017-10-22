@@ -358,6 +358,7 @@ static void __ref a8_power_lost_detect_work(struct work_struct *work)
 
     if (pwrl->pwr_lost_off_delay <= 0) {
         pwrl->pwr_lost_ps = e_pwrl_unspecified;
+	spin_unlock_irqrestore(&pwrl->pwr_lost_lock, pwrl->lock_flags);
         enable_irq(pwrl->pwr_lost_irq);
         return;
     }
