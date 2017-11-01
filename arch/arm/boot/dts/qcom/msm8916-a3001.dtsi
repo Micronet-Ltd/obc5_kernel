@@ -595,7 +595,7 @@
 &pm8916_chg {
 	status = "ok";
 	/* by skj */
-	qcom,vddmax-mv = <4250>;
+	qcom,vddmax-mv = <4200>;
 	qcom,vddsafe-mv = <4200>;
 	qcom,cool-bat-mv = <4100>;
 	qcom,warm-bat-mv = <4100>;
