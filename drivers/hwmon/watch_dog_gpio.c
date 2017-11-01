@@ -232,8 +232,12 @@ static void watchdog_toggle_work(struct work_struct *work)
     unsigned long d;
 
     if (0 != inf->suspend) {
-        d = (-1 == inf->suspend)?0:1;
-//        d = (-1 == inf->suspend)?1:0;
+        if (inf->high_delay == inf->low_delay) {
+            d = (-1 == inf->suspend)?0:1;
+        }else {
+            d = 0;
+    //        d = (-1 == inf->suspend)?1:0;
+        }
         gpio_set_value(inf->toggle_pin, (int)d);
         return;
     }
@@ -337,7 +341,7 @@ static int watchdog_pin_probe(struct platform_device *op)
         gpio_export(inf->usb_switch_pin, 0);
         gpio_export(inf->port_det_pin, 0);
 
-		irq= gpio_to_irq(inf->port_det_pin);
+        irq= gpio_to_irq(inf->port_det_pin);
 		rc = devm_request_threaded_irq(dev, irq, NULL,
 				port_det_handler,
 				IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
@@ -474,15 +478,18 @@ static int watchdog_pin_prepare(struct device *dev)
         cancel_delayed_work(&wdi->toggle_work);
         spin_lock_irqsave(&wdi->rfkillpin_lock, wdi->lock_flags);
         wdi->awake_delay = 2 * wdi->high_delay + wdi->low_delay + ktime_to_ms(ktime_get());
-        wdi->awake_delay_max = wdi->awake_delay + 2*wdi->low_delay + 200;
+        wdi->awake_delay_max = wdi->awake_delay + wdi->low_delay + 200;
         spin_unlock_irqrestore(&wdi->rfkillpin_lock, wdi->lock_flags);
         schedule_delayed_work(&wdi->toggle_work, 0);
     }
 
     if (gpio_is_valid(wdi->toggle_pin)) {
-        pr_notice("set toggle pin to low [%d] %lld\n", wdi->state, ktime_to_ms(ktime_get()));
-//        gpio_set_value(wdi->toggle_pin, 0);
-        gpio_set_value(wdi->toggle_pin, 1);
+        pr_notice("set toggle pin to inactive [%d] %lld\n", wdi->state, ktime_to_ms(ktime_get()));
+        if (wdi->high_delay == wdi->low_delay) {
+            gpio_set_value(wdi->toggle_pin, 1);
+        } else {
+            gpio_set_value(wdi->toggle_pin, 0);
+        }
     }
 
 	if(gpio_is_valid(wdi->suspend_ind)){
@@ -566,6 +573,8 @@ static void watchdog_pin_complete(struct device *dev)
         wdi->reject_suspend = 0;
         wdi->awake_delay = 0;
         wdi->suspend = 0;
+        wdi->awake_delay_max = 0;
+
         spin_unlock_irqrestore(&wdi->rfkillpin_lock, wdi->lock_flags);
         if (wdi->dev->power.wakeup->active) {
             pr_notice("relax %lld\n", ktime_to_ms(ktime_get()));
@@ -577,7 +586,7 @@ static void watchdog_pin_complete(struct device *dev)
             gpio_set_value(wdi->rf_kill_pin, wdi->rf_state);
         }
 
-        pr_notice("[%d] %lld\n", wdi->suspend, ktime_to_ms(ktime_get()));
+        pr_notice("resumed %lld\n", ktime_to_ms(ktime_get()));
     }
 
 //    cancel_delayed_work(&wdi->toggle_work); 
