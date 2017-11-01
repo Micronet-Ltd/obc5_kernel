@@ -60,7 +60,7 @@
 
 #define ID_TIMER_FREQ		(jiffies + msecs_to_jiffies(500))
 #define CHG_RECHECK_DELAY	(jiffies + msecs_to_jiffies(2000))
-#define OTG_SUSPEND_WAKE_LOCK_DELAY 5000 //minimal suspend timeout
+#define OTG_SUSPEND_WAKE_LOCK_DELAY 6000 //minimal suspend timeout
 #define ULPI_IO_TIMEOUT_USEC	(10 * 1000)
 #define USB_PHY_3P3_VOL_MIN	3050000 /* uV */
 #define USB_PHY_3P3_VOL_MAX	3300000 /* uV */
@@ -956,6 +956,7 @@ static void msm_otg_host_hnp_enable(struct usb_otg *otg, bool enable)
 	struct usb_hcd *hcd = bus_to_hcd(otg->host);
 	struct usb_device *rhub = otg->host->root_hub;
 
+    pr_notice("\n");
 	if (enable) {
 		pm_runtime_disable(&rhub->dev);
 		rhub->state = USB_STATE_NOTATTACHED;
@@ -1716,6 +1717,7 @@ static int msm_otg_resume(struct msm_otg *motg)
 #else
 	wake_lock(&motg->wlock);
 #endif
+    dev_notice(phy->dev, "Wake lock USB for %d\n", OTG_SUSPEND_WAKE_LOCK_DELAY);
 
 	/*
 	 * If we are resuming from the device bus suspend, restore
@@ -1777,8 +1779,10 @@ static int msm_otg_resume(struct msm_otg *motg)
 	 * PHY comes out of low power mode (LPM) in case of wakeup
 	 * from asynchronous interrupt.
 	 */
-	if (!(readl_relaxed(USB_PORTSC) & PORTSC_PHCD))
+	if (!(readl_relaxed(USB_PORTSC) & PORTSC_PHCD)) {
+        dev_notice(phy->dev, "skip resume\n");
 		goto skip_phy_resume;
+    }
 
 	in_device_mode =
 		phy->otg->gadget &&
@@ -1884,7 +1888,7 @@ skip_phy_resume:
 	if (motg->host_bus_suspend)
 		usb_hcd_resume_root_hub(hcd);
 
-	dev_info(phy->dev, "USB exited from low power mode\n");
+	dev_notice(phy->dev, "USB exited from low power mode\n");
 	msm_otg_dbg_log_event(phy, "LPM EXIT DONE",
 			motg->caps, motg->lpm_flags);
 
