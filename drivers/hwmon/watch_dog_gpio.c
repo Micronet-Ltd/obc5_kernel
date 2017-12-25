@@ -233,10 +233,10 @@ static void watchdog_toggle_work(struct work_struct *work)
 
     if (0 != inf->suspend) {
         if (inf->high_delay == inf->low_delay) {
-            d = (-1 == inf->suspend)?0:1;
-        }else {
+            //d = (-1 == inf->suspend)?0:1;
+            d = (-1 == inf->suspend)?1:0;
+        } else {
             d = 0;
-    //        d = (-1 == inf->suspend)?1:0;
         }
         gpio_set_value(inf->toggle_pin, (int)d);
         return;
@@ -308,13 +308,13 @@ static int watchdog_pin_probe(struct platform_device *op)
 		dev_err(dev, "Memory exhausted!\n");
 		return -ENOMEM;
 	}
-	inf->toggle_pin=of_get_named_gpio(np,"ehang,toggle-pin",0);
-	if(inf->toggle_pin<0){
+	inf->toggle_pin = of_get_named_gpio(np,"ehang,toggle-pin",0);
+	if(inf->toggle_pin < 0){
 		dev_err(dev, "Memory exhausted!\n");
 		return -ENOMEM;		
 	}
-	rc=devm_gpio_request(dev,inf->toggle_pin,"watchdog_pin");
-	if(rc<0){
+	rc=devm_gpio_request(dev,inf->toggle_pin, "watchdog_pin");
+	if(rc < 0){
 		dev_err(dev, "toggle pin is busy!\n");
 		return -ENOMEM;			
 	}
@@ -416,7 +416,7 @@ static int watchdog_pin_probe(struct platform_device *op)
         schedule_delayed_work(&inf->toggle_work, msecs_to_jiffies(inf->low_delay));	
     } else {
         inf->state = 1;
-        gpio_set_value(inf->toggle_pin, inf->state);
+        gpio_set_value(inf->toggle_pin, inf->state^1);
         pr_notice("notify to cradle PON[%d]\n", inf->state);
     }
 
@@ -485,11 +485,11 @@ static int watchdog_pin_prepare(struct device *dev)
 
     if (gpio_is_valid(wdi->toggle_pin)) {
         pr_notice("set toggle pin to inactive [%d] %lld\n", wdi->state, ktime_to_ms(ktime_get()));
+        d = 0;
         if (wdi->high_delay == wdi->low_delay) {
-            gpio_set_value(wdi->toggle_pin, 1);
-        } else {
-            gpio_set_value(wdi->toggle_pin, 0);
+            //d = 1;
         }
+        gpio_set_value(wdi->toggle_pin, d);
     }
 
 	if(gpio_is_valid(wdi->suspend_ind)){
@@ -595,6 +595,30 @@ static void watchdog_pin_complete(struct device *dev)
     return;
 }
 
+static void watchdog_pin_shutdown(struct platform_device *dev)
+{
+    struct watch_dog_pin_info *wdi = dev_get_drvdata(&dev->dev);
+
+    cancel_delayed_work(&wdi->toggle_work);
+    spin_lock_irqsave(&wdi->rfkillpin_lock, wdi->lock_flags);
+    wdi->reject_suspend = 0;
+    wdi->awake_delay = 0;
+    wdi->suspend = 1;
+    spin_unlock_irqrestore(&wdi->rfkillpin_lock, wdi->lock_flags);
+
+    if(gpio_is_valid(wdi->rf_kill_pin)){
+        pr_notice("shutdown rf-kill [%d] %lld\n", wdi->rf_state, ktime_to_ms(ktime_get()));
+        gpio_set_value(wdi->rf_kill_pin, wdi->rf_state^1);
+    }
+
+    if (gpio_is_valid(wdi->toggle_pin)) {
+        pr_notice("set toggle pin to inactive [%d] %lld\n", wdi->state, ktime_to_ms(ktime_get()));
+        gpio_set_value(wdi->toggle_pin, 0);
+    }
+
+    return;
+}
+
 static const struct dev_pm_ops watchdog_pin_pm_ops =
 {
 	.prepare	= watchdog_pin_prepare,
@@ -611,6 +635,7 @@ static struct of_device_id watchdog_pin_match[] = {
 static struct platform_driver watchdog_pin_driver = {
 	.probe		= watchdog_pin_probe,
 	.remove		= watchdog_pin_remove,
+    .shutdown   = watchdog_pin_shutdown,
 	.driver		= {
 		.name = "watchdog-pin",
 		.owner = THIS_MODULE,
