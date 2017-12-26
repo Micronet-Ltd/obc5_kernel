@@ -618,7 +618,7 @@
 	qcom,battery-data = <&mtp_batterydata>;
 	/* by skj*/
 	qcom,resume-soc = <75>;
-	qcom,max-voltage-uv = <4185000>;
+	qcom,max-voltage-uv = <4175000>;
 	qcom,charger-detect-cv;		
 };
 
