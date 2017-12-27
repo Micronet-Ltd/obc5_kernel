@@ -286,6 +286,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 	suspend_test_start();
 	dpm_resume_end(PMSG_RESUME);
 	suspend_test_finish("resume devices");
+    printk(KERN_NOTICE "PM: resume devices\n");
 	ftrace_start();
 	resume_console();
  Close:
