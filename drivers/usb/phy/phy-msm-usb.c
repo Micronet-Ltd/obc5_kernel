@@ -5591,6 +5591,9 @@ static int msm_otg_probe(struct platform_device *pdev)
 	phy = &motg->phy;
 	phy->dev = &pdev->dev;
 
+	motg->dbg_idx = 0;
+	motg->dbg_lock = __RW_LOCK_UNLOCKED(lck);
+
 	if (motg->pdata->bus_scale_table) {
 		motg->bus_perf_client =
 		    msm_bus_scale_register_client(motg->pdata->bus_scale_table);
@@ -5805,8 +5808,9 @@ static int msm_otg_probe(struct platform_device *pdev)
 	/* Ensure that above STOREs are completed before enabling interrupts */
 	mb();
 
-	motg->dbg_idx = 0;
-	motg->dbg_lock = __RW_LOCK_UNLOCKED(lck);
+//	motg->dbg_idx = 0;
+//	motg->dbg_lock = __RW_LOCK_UNLOCKED(lck);
+
 	ret = msm_otg_mhl_register_callback(motg, msm_otg_mhl_notify_online);
 	if (ret)
 		dev_dbg(&pdev->dev, "MHL can not be supported\n");
@@ -6068,6 +6072,11 @@ static int msm_otg_probe(struct platform_device *pdev)
 	motg->pm_notify.notifier_call = msm_otg_pm_notify;
 	register_pm_notifier(&motg->pm_notify);
 	msm_otg_dbg_log_event(phy, "OTG PROBE", motg->caps, motg->lpm_flags);
+
+//	if (motg->bus_perf_client && debug_bus_voting_enabled) {
+		/* Some platforms require BUS vote to control clocks */
+//			msm_otg_bus_vote(motg, USB_MIN_PERF_VOTE);
+//	}
 
 	return 0;
 
