@@ -57,6 +57,8 @@ enum msm_hsl_regs {
 	UARTDM_BCR,
 	UARTDM_TXFS,
 	UARTDM_RXFS,
+	UARTDM_IRDA,
+	UARTDM_HCR,
 	UARTDM_LAST,
 };
 

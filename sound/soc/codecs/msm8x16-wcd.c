@@ -227,7 +227,7 @@ static int speak_ctrl_pa_sw_hw_last;
 static void speak_ctrl_pa_sw_hw(int enable)
 {
 	mutex_lock(&pa_sw_mutex);	
-	printk("speak_ctrl_pa_sw_hw enable=%d\n",enable);
+	//printk("speak_ctrl_pa_sw_hw enable=%d\n",enable);
 	if(0==enable){		
 		if(gpio_is_valid(ext_spk_pa_gpio))
 			gpio_direction_output(ext_spk_pa_gpio, 0);
@@ -1350,12 +1350,12 @@ static int msm8x16_wcd_ext_spk_set(struct snd_kcontrol *kcontrol,
 		case 0:
 			current_ext_spk_pa_state = false;
 			speak_ctrl_pa_sw(0);
-			pr_info("howard set ext pa gpio 0\n");
+			pr_debug("howard set ext pa gpio 0\n");
 			break;
 		case 1:
 			current_ext_spk_pa_state = true;
 			speak_ctrl_pa_sw(1);
-			pr_info("howard set ext pa gpio 1\n");
+			pr_debug("howard set ext pa gpio 1\n");
 			break;
 		default:
 			return -EINVAL;
@@ -3061,7 +3061,7 @@ void wcd_imped_config(struct snd_soc_codec *codec,
 		return;
 	}
 	if (value >= wcd_imped_val[ARRAY_SIZE(wcd_imped_val) - 1]) {
-		pr_err("%s, invalid imped, greater than 48 Ohm\n = %d\n",
+		pr_debug("%s, invalid imped, greater than 48 Ohm\n = %d\n",
 			__func__, value);
 		return;
 	}
@@ -3117,7 +3117,7 @@ static int msm8x16_wcd_hphl_dac_event(struct snd_soc_dapm_widget *w,
 		if (!ret)
 			wcd_imped_config(codec, impedl, true);
 		else
-			dev_err(codec->dev, "Failed to get mbhc impedance %d\n",
+			dev_dbg(codec->dev, "Failed to get mbhc impedance %d\n",
 				ret);
 		break;
 	case SND_SOC_DAPM_POST_PMU:

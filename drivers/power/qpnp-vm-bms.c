@@ -994,7 +994,7 @@ static int lookup_soc_ocv(struct qpnp_bms_chip *chip, int ocv_uv, int batt_temp)
 			soc_acc = DIV_ROUND_CLOSEST(100 * (soc_ocv - soc_uuc),
 							(100 - soc_uuc));
 
-			pr_debug("fcc=%d acc=%d soc_final=%d soc_uuc=%d soc_acc=%d current_now=%d iavg_ma=%d\n",
+			pr_debug("full charge[%d] charge[%d] final capacity[%d] soc_uuc[%d] soc_acc[%d] current now[%d] average current[%d]\n",
 				fcc, acc, soc_final, soc_uuc,
 				soc_acc, chip->current_now / 1000, iavg_ma);
 
@@ -1013,8 +1013,7 @@ static int lookup_soc_ocv(struct qpnp_bms_chip *chip, int ocv_uv, int batt_temp)
 
 	soc_final = bound_soc(soc_final);
 
-	pr_debug("soc_final=%d soc_ocv=%d soc_cutoff=%d ocv_uv=%u batt_temp=%d\n",
-			soc_final, soc_ocv, soc_cutoff, ocv_uv, batt_temp);
+	pr_notice("capacity[%d%%] voltage[%u mV] current[%d mA] temp[%d degiC]\n", soc_final, ocv_uv/1000, chip->current_now/1000, batt_temp);
 
 	return soc_final;
 }

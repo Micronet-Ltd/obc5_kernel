@@ -587,8 +587,9 @@
 &pm8916_chg {
 	status = "ok";
 	/* by skj */
-	qcom,vddmax-mv = <4250>;
-	qcom,vddsafe-mv = <4200>;
+	qcom,vddmax-mv = <4185>;
+	qcom,vddsafe-mv = <4185>;
+	qcom,vinmin-mv = <4200>;
 	qcom,cool-bat-mv = <4100>;
 	qcom,warm-bat-mv = <4100>;
 	qcom,disable-vbatdet-based-recharge;
@@ -608,7 +609,8 @@
 	status = "ok";
 	qcom,battery-data = <&mtp_batterydata>;
 	/* by skj*/
-	qcom,resume-soc = <90>;
+	qcom,resume-soc = <75>;
+	qcom,max-voltage-uv = <4175000>;
 	qcom,charger-detect-cv;		
 };
 
