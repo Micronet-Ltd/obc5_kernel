@@ -145,6 +145,8 @@ static const unsigned int regmap[][UARTDM_LAST] = {
 		[UARTDM_DMEN] = 0x3c,
 		[UARTDM_TXFS] = 0x4c,
 		[UARTDM_RXFS] = 0x50,
+		[UARTDM_IRDA] = 0x38,
+		[UARTDM_HCR] = 0x24
 	},
 };
 
@@ -760,6 +762,8 @@ static void msm_hsl_reset(struct uart_port *port)
 	msm_hsl_write(port, RESET_RX, regmap[vid][UARTDM_CR]);
 	msm_hsl_write(port, RESET_TX, regmap[vid][UARTDM_CR]);
 	msm_hsl_write(port, RESET_ERROR_STATUS, regmap[vid][UARTDM_CR]);
+	msm_hsl_write(port, RESET_TX_ERROR, regmap[vid][UARTDM_CR]);
+	msm_hsl_write(port, RESET_STALE_INT, regmap[vid][UARTDM_CR]);
 	msm_hsl_write(port, RESET_BREAK_INT, regmap[vid][UARTDM_CR]);
 	msm_hsl_write(port, RESET_CTS, regmap[vid][UARTDM_CR]);
 	msm_hsl_write(port, RFR_LOW, regmap[vid][UARTDM_CR]);
@@ -1016,6 +1020,10 @@ static int msm_hsl_startup(struct uart_port *port)
 		rfr_level = port->fifosize;
 
 	spin_lock_irqsave(&port->lock, flags);
+
+	msm_hsl_write(port, 0, regmap[vid][UARTDM_IRDA]);
+	msm_hsl_write(port, 0, regmap[vid][UARTDM_HCR]);
+	msm_hsl_write(port, 0, regmap[vid][UARTDM_DMEN]);
 
 	vid = msm_hsl_port->ver_id;
 	/* set automatic RFR level */
