@@ -2606,7 +2606,7 @@ static void msm_otg_chg_check_timer_func(unsigned long data)
 		!test_bit(B_SESS_VLD, &motg->inputs) ||
 		otg->phy->state != OTG_STATE_B_PERIPHERAL ||
 		otg->gadget->speed != USB_SPEED_UNKNOWN) {
-		dev_dbg("Nothing to do in chg_check_timer[%d, H%lx, %d, %d]\n", motg->in_lpm.counter, motg->inputs, otg->phy->state, otg->gadget->speed);
+		dev_dbg(otg->phy->dev, "Nothing to do in chg_check_timer[%d, H%lx, %d, %d]\n", motg->in_lpm.counter, motg->inputs, otg->phy->state, otg->gadget->speed);
 		return;
 	}
 
