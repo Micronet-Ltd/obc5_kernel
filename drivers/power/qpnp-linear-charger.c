@@ -1814,7 +1814,7 @@ static int qpnp_lbc_parallel_get_property(struct power_supply *psy,
 static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
 {
 	struct qpnp_lbc_chip *chip = ctx;
-	bool bat_warm = 0, bat_cool = 0;
+	bool bat_warm = 0, bat_cool = 0, bat_hot = 0, bat_frozen = 0;
 	int temp;
 	unsigned long flags;
 
@@ -1880,7 +1880,7 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
     if (temp >= chip->cfg_warm_bat_decidegc) {
         pr_notice("reach warm[%d] wait for normal %d", temp, chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC);
         /* Warm to normal*/
-        bat_warm = 1;
+        bat_hot = bat_warm = 1;
         bat_cool = 0;
         chip->adc_param.low_temp = chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC;
         chip->adc_param.high_temp = chip->cfg_warm_bat_decidegc;
@@ -1907,7 +1907,7 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
         /* Cool to normal*/
         pr_notice("reach cool[%d] wait for warm %d", temp, chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC);
         bat_warm = 0;
-        bat_cool = 1;
+        bat_frozen = bat_cool = 1;
         chip->adc_param.low_temp = chip->cfg_cool_bat_decidegc;
         chip->adc_param.high_temp = chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC;
         chip->adc_param.state_request = ADC_TM_WARM_THR_ENABLE;
@@ -1923,7 +1923,7 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
      
 #endif
 
-	if (chip->bat_is_cool ^ bat_cool || chip->bat_is_warm ^ bat_warm) {
+	if (chip->bat_is_cool ^ bat_cool || chip->bat_is_warm ^ bat_warm || bat_hot || bat_frozen) {
 		spin_lock_irqsave(&chip->ibat_change_lock, flags);
 		chip->bat_is_cool = bat_cool;
 		chip->bat_is_warm = bat_warm;
@@ -1932,19 +1932,20 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
 		spin_unlock_irqrestore(&chip->ibat_change_lock, flags);
         if (!!chip->charger_disabled) {
             if (!(chip->bat_is_warm || chip->bat_is_cool)) {
-                if (gpio_is_valid(chip->vbat_to_vph_pin)) {
-                    pr_notice("switch vbat-to-vph\n");
-                    gpio_set_value(chip->vbat_to_vph_pin, 1);
-                }
                 qpnp_lbc_charger_enable(chip, THERMAL, 1); 
             }
         } else {
-            if (chip->bat_is_warm || chip->bat_is_cool) {
+            if ((chip->bat_is_warm || chip->bat_is_cool)  && (bat_hot || bat_frozen)) {
                 if (gpio_is_valid(chip->vbat_to_vph_pin)) {
                     pr_notice("switch vbus-to-vph\n");
                     gpio_set_value(chip->vbat_to_vph_pin, 0);
                 } else {
                     qpnp_lbc_charger_enable(chip, THERMAL, 0); 
+                }
+            } else if (!(chip->bat_is_warm || chip->bat_is_cool)) {
+                if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+                    pr_notice("switch vbat-to-vph\n");
+                    gpio_set_value(chip->vbat_to_vph_pin, 1);
                 }
             }
         }
