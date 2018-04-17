@@ -25,6 +25,9 @@
 #include <linux/bitops.h>
 #include <linux/leds.h>
 #include <linux/debugfs.h>
+#include <linux/gpio.h>
+#include <linux/of_platform.h>
+#include <linux/of_gpio.h>
 
 #define CREATE_MASK(NUM_BITS, POS) \
 	((unsigned char) (((1 << (NUM_BITS)) - 1) << (POS)))
@@ -380,6 +383,7 @@ struct qpnp_lbc_chip {
 	/* parallel-chg params */
 	struct power_supply		parallel_psy;
 	struct delayed_work		parallel_work;
+    unsigned int vbat_to_vph_pin;
 };
 
 static void qpnp_lbc_enable_irq(struct qpnp_lbc_chip *chip,
@@ -1318,6 +1322,10 @@ static void qpnp_batt_external_power_changed(struct power_supply *psy)
             /* Disable charger in case of reset or suspend event */
             if (current_ma <= 2 && !chip->cfg_use_fake_battery
                     && get_prop_batt_present(chip)) {
+                if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+                    pr_notice("switch vbat-to-vph\n");
+                    gpio_set_value(chip->vbat_to_vph_pin, 1);
+                }
                 qpnp_lbc_charger_enable(chip, CURRENT, 0);
                 chip->usb_psy_ma = QPNP_CHG_I_MAX_MIN_90;
                 qpnp_lbc_set_appropriate_current(chip);
@@ -1522,6 +1530,10 @@ static int qpnp_batt_power_set_property(struct power_supply *psy,
                 pr_notice("battery full\n"); 
             }
 
+            if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+                pr_notice("switch vbat-to-vph\n");
+                gpio_set_value(chip->vbat_to_vph_pin, 1);
+            }
 			rc = qpnp_lbc_charger_enable(chip, SOC, 0);
 			if (rc)
 				pr_err("Failed to disable charging rc=%d\n",
@@ -1920,11 +1932,20 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
 		spin_unlock_irqrestore(&chip->ibat_change_lock, flags);
         if (!!chip->charger_disabled) {
             if (!(chip->bat_is_warm || chip->bat_is_cool)) {
+                if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+                    pr_notice("switch vbat-to-vph\n");
+                    gpio_set_value(chip->vbat_to_vph_pin, 1);
+                }
                 qpnp_lbc_charger_enable(chip, THERMAL, 1); 
             }
         } else {
             if (chip->bat_is_warm || chip->bat_is_cool) {
-                qpnp_lbc_charger_enable(chip, THERMAL, 0); 
+                if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+                    pr_notice("switch vbus-to-vph\n");
+                    gpio_set_value(chip->vbat_to_vph_pin, 0);
+                } else {
+                    qpnp_lbc_charger_enable(chip, THERMAL, 0); 
+                }
             }
         }
 	}
@@ -2065,6 +2086,10 @@ static int qpnp_lbc_usb_path_init(struct qpnp_lbc_chip *chip)
 	}
 
 	if (chip->cfg_charging_disabled) {
+        if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+            pr_notice("switch vbat-to-vph\n");
+            gpio_set_value(chip->vbat_to_vph_pin, 1);
+        }
 		rc = qpnp_lbc_charger_enable(chip, USER, 0);
 		if (rc)
 			pr_err("Failed to disable charging rc=%d\n", rc);
@@ -2364,6 +2389,20 @@ static int qpnp_charger_read_dt_props(struct qpnp_lbc_chip *chip)
 		}
 	}
 
+    chip->vbat_to_vph_pin = of_get_named_gpio(chip->spmi->dev.of_node, "qcom,vbat-to-vph-gpio", 0);
+    if (chip->vbat_to_vph_pin < 0)
+        pr_notice("vbat-to-vph-gpio is not available\n");
+    else {
+        if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+            if (devm_gpio_request(chip->dev, chip->vbat_to_vph_pin, "vbat-to-vph-gpio") < 0) {
+                pr_err("vbat-to-vph-gpio is busy\n");
+            } else {
+                gpio_direction_output(chip->vbat_to_vph_pin, 1);
+                gpio_export(chip->vbat_to_vph_pin, 0);
+            }
+        }
+    }
+
 	pr_debug("vddmax-mv=%d, vddsafe-mv=%d, vinmin-mv=%d, ibatsafe-ma=$=%d\n",
 			chip->cfg_max_voltage_mv,
 			chip->cfg_safe_voltage_mv,
@@ -2411,6 +2450,11 @@ static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
 	if (chip->usb_present ^ usb_present) {
 		chip->usb_present = usb_present;
 		if (!usb_present) {
+            if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+                pr_notice("switch vbat-to-vph\n");
+                gpio_set_value(chip->vbat_to_vph_pin, 1);
+            }
+
 			qpnp_lbc_charger_enable(chip, CURRENT, 0);
 			spin_lock_irqsave(&chip->ibat_change_lock, flags);
 			chip->usb_psy_ma = QPNP_CHG_I_MAX_MIN_90;
@@ -3203,6 +3247,10 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 				chip->bat_is_cool = 1;
 			}
             if (chip->bat_is_warm || chip->bat_is_cool) {
+                if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+                    pr_notice("switch vbat-to-vph\n");
+                    gpio_set_value(chip->vbat_to_vph_pin, 1);
+                }
 				qpnp_lbc_charger_enable(chip, THERMAL, 0); 
             }
         }
