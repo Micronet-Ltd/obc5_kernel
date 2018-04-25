@@ -592,6 +592,7 @@
 	qcom,vinmin-mv = <4200>;
 	qcom,cool-bat-mv = <4100>;
 	qcom,warm-bat-mv = <4100>;
+	qcom,ibatsafe-ma = <1050>;
 	qcom,disable-vbatdet-based-recharge;
 	qcom,charger-detect-eoc;	
 	qcom,vbat-to-vph-gpio = <&msm_gpio 62 0>;
