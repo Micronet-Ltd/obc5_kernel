@@ -2194,12 +2194,17 @@ static void msm_hsusb_vbus_power(struct msm_otg *motg, bool on)
 {
 	int ret;
 	static bool vbus_is_on;
+	static int last_on_smart_cradle = 0;
 
 	msm_otg_dbg_log_event(&motg->phy, "VBUS POWER", on, vbus_is_on);
 	if (vbus_is_on == on)
 		return;
-	if(motg->smart_cradle_plagged)
+	if(motg->smart_cradle_plagged || last_on_smart_cradle) {
+		msm_otg_notify_host_mode(motg, on);
+		vbus_is_on = on;
+		last_on_smart_cradle = on ? 1 : 0;
 		return;
+	}
 
 	pr_notice("VBUS POWER %d (it was %d)\n", on, vbus_is_on);
 	if (motg->pdata->vbus_power) {
@@ -4828,7 +4833,7 @@ static int otg_power_set_property_usb(struct power_supply *psy,
         struct usb_otg *otg = motg->phy.otg;
         motg->smart_cradle_plagged = val->intval;
         if (otg) {
-            msm_otg_set_power(otg->phy, (motg->smart_cradle_plagged) ? IDEV_ACA_CHG_MAX : 0); 
+            msm_otg_set_power(otg->phy, (motg->smart_cradle_plagged) ? IDEV_ACA_DOCK_CHARGER : 0);
         }
         break;
     }
