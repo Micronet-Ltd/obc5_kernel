@@ -130,9 +130,9 @@ static void dock_switch_work_func(struct work_struct *work)
         val = pulses2freq(val, PATERN_INTERIM);
         val = freq2pattern(val);
         pr_notice("pattern[%d, %d] [%lld]%lld\n", val, gpio_get_value(ds->ign_pin), timer, ktime_to_ms(ktime_get()));
-        if (BASIC_PATTERN == val /* temporary for debug purposes only */&& ds->ign_active_l != gpio_get_value(ds->ign_pin)) {
+        if (BASIC_PATTERN == val) {
             val = 0;
-            if (e_dock_type_smart == ds->dock_type) {
+            if (e_dock_type_smart == ds->dock_type && ds->ign_active_l != gpio_get_value(ds->ign_pin)) {
                 pr_notice("smart cradle unplagged %lld\n", ktime_to_ms(ktime_get()));
                 if (ds->usb_psy) {
                     prop.intval = 0;
