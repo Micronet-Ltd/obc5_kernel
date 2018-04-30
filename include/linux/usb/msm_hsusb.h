@@ -108,6 +108,7 @@ enum msm_usb_phy_type {
 #define IDEV_CHG_MIN	500
 #define IUNIT		100
 
+#define IDEV_ACA_DOCK_CHARGER 1050
 #define IDEV_ACA_CHG_MAX	1000
 #define IDEV_ACA_CHG_LIMIT	500
 

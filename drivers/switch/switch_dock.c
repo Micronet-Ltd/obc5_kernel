@@ -17,6 +17,7 @@
 #include <linux/of_platform.h>
 #include <linux/of_gpio.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 #include <linux/workqueue.h>
 #include <linux/wakelock.h>
 
@@ -61,6 +62,7 @@ static void dock_switch_work_func(struct work_struct *work)
 {
 	struct dock_switch_device *ds  = container_of(work, struct dock_switch_device, work);
     int val;
+    struct irq_desc *desc;
 	
     val = 0;
     //pr_notice("pins[%d, %d]\n", ds->dock_pin, ds->ign_pin);
@@ -81,7 +83,10 @@ static void dock_switch_work_func(struct work_struct *work)
                 //pr_notice("switch usb\n");
                 gpio_set_value(ds->usb_switch_pin, !!(ds->dock_active_l == gpio_get_value(ds->dock_pin)));
             }
-            enable_irq(ds->dock_irq);
+        	desc = irq_to_desc(ds->dock_irq);
+        	if(desc->depth > 0) {
+                enable_irq(ds->dock_irq);
+            }
         }
 	}
 
@@ -98,7 +103,10 @@ static void dock_switch_work_func(struct work_struct *work)
         if (ds->sched_irq & SWITCH_IGN) {
             //pr_notice("enable ignition monitor\n");
             ds->sched_irq &= ~SWITCH_IGN;
-            enable_irq(ds->ign_irq); 
+        	desc = irq_to_desc(ds->ign_irq);
+        	if(desc->depth > 0) {
+                enable_irq(ds->ign_irq);
+            }
         }
 	}
 
@@ -397,7 +405,7 @@ static int dock_switch_probe(struct platform_device *pdev)
 	if (ds->dock_irq)
         devm_free_irq(&pdev->dev, ds->dock_irq, ds);
     if (ds->ign_irq)
-        devm_free_irq(&pdev->dev, ds->dock_irq, ds);
+        devm_free_irq(&pdev->dev, ds->ign_irq, ds);
 	if (gpio_is_valid(ds->dock_pin))
         devm_gpio_free(&pdev->dev, ds->dock_pin);
     if (gpio_is_valid(ds->ign_pin))
@@ -424,7 +432,7 @@ static int dock_switch_remove(struct platform_device *pdev)
 		devm_free_irq(&pdev->dev, ds->ign_irq, ds);
     }
     if (ds->dock_irq) {
-        disable_irq_nosync(ds->ign_irq);
+        disable_irq_nosync(ds->dock_irq);
         devm_free_irq(&pdev->dev, ds->dock_irq, ds);
     }
 
@@ -465,16 +473,23 @@ static int dock_switch_suspend(struct device *dev)
 static int dock_switch_resume(struct device *dev)
 {
 	struct dock_switch_device *ds = dev_get_drvdata(dev);
+	struct irq_desc *desc;
 
     if (device_may_wakeup(dev)) {
         if (ds->ign_irq) {
             pr_notice("disable wake source IGN[%d]\n", ds->ign_irq);
-            disable_irq_nosync(ds->ign_irq);
+        	desc = irq_to_desc(ds->ign_irq);
+            if(desc->depth == 0) {
+                disable_irq_nosync(ds->ign_irq);
+            }
             disable_irq_wake(ds->ign_irq);
         }
         if (ds->dock_irq) {
             pr_notice("disable wake source DOCK[%d]\n", ds->dock_irq);
-            disable_irq_nosync(ds->dock_irq);
+        	desc = irq_to_desc(ds->dock_irq);
+            if(desc->depth == 0) {
+                disable_irq_nosync(ds->dock_irq);
+            }
             disable_irq_wake(ds->dock_irq);
         }
     }
