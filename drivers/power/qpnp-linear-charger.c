@@ -571,8 +571,10 @@ static int qpnp_lbc_get_trim_voltage(u8 trim_reg)
 	int i;
 
 	for (i = 0; i < MAX_VDD_EA_TRIM_CFG; i++)
-		if (trim_reg == vddtrim_map[i].trim_val)
+		if (trim_reg == vddtrim_map[i].trim_val) {
+            pr_notice(" [%d uV]\n", vddtrim_map[i].trim_uv);
 			return vddtrim_map[i].trim_uv;
+        }
 
 	pr_err("Invalid trim reg reg_val=%x\n", trim_reg);
 	return -EINVAL;
@@ -782,7 +784,7 @@ static int qpnp_lbc_vddmax_set(struct qpnp_lbc_chip *chip, int voltage)
 
 	spin_lock_irqsave(&chip->hw_access_lock, flags);
 	reg_val = (voltage - QPNP_LBC_VBAT_MIN_MV) / QPNP_LBC_VBAT_STEP_MV;
-	pr_debug("voltage=%d setting %02x\n", voltage, reg_val);
+	pr_notice("[%d mV, %02x]\n", voltage, reg_val);
 	rc = __qpnp_lbc_write(chip->spmi, chip->chgr_base + CHG_VDD_MAX_REG,
 				&reg_val, 1);
 	if (rc) {
@@ -940,6 +942,7 @@ static int qpnp_lbc_ibatmax_set(struct qpnp_lbc_chip *chip, int chg_current)
 						QPNP_LBC_IBATMAX_MAX);
 	reg_val = (chg_current - QPNP_LBC_IBATMAX_MIN) / QPNP_LBC_I_STEP_MA;
 
+    pr_notice("[%d mA, %02x]\n", chg_current, reg_val);
 	rc = qpnp_lbc_write(chip, chip->chgr_base + CHG_IBAT_MAX_REG,
 				&reg_val, 1);
 	if (rc)
