@@ -362,6 +362,18 @@
 			};
 		};
 
+		vbat-to-vph-pin {
+			qcom,pins = <&gp 62>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <0>;
+			label = "vbat-to-vph-pin";
+			vbat_to_vph_default: default {
+				drive-strength = <2>;
+				bias-disable;
+				output-high;
+			};
+		};
+
 		spi0_active {
 			/* MOSI, MISO, CLK */
 			qcom,pins = <&gp 8>, <&gp 9>, <&gp 11>;
