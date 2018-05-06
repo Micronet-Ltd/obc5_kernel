@@ -125,8 +125,6 @@ static void dock_switch_work_func(struct work_struct *work)
     union power_supply_propval prop = {0,};
     struct irq_desc *desc;
 
-    pr_notice("+dock_type %d\n", ds->dock_type);
-
     if (e_dock_type_basic != ds->dock_type) {
         val = wait_for_stable_signal(ds->ign_pin, DEBOUNCE_INTERIM + PATERN_INTERIM);
         val = pulses2freq(val, PATERN_INTERIM);
@@ -225,7 +223,7 @@ static void dock_switch_work_func(struct work_struct *work)
 
     // interrupts handled
     if (ds->sched_irq & SWITCH_DOCK) {
-        pr_notice("enable dock monitor irq[%d]\n", ds->dock_irq);
+//        pr_notice("enable dock monitor irq[%d]\n", ds->dock_irq);
     	desc = irq_to_desc(ds->dock_irq);
     	if(desc->depth > 0) {
     		ds->sched_irq &= ~SWITCH_DOCK;
@@ -234,7 +232,7 @@ static void dock_switch_work_func(struct work_struct *work)
     }
 
     if (ds->sched_irq & SWITCH_IGN) {
-        pr_notice("enable ignition monitor irq[%d]\n", ds->ign_irq);
+//        pr_notice("enable ignition monitor irq[%d]\n", ds->ign_irq);
     	desc = irq_to_desc(ds->ign_irq);
     	if(desc->depth > 0) {
         	ds->sched_irq &= ~SWITCH_IGN;
@@ -252,7 +250,6 @@ static void dock_switch_work_func(struct work_struct *work)
 //        pr_notice("notify dock state [%d] %lld\n", ds->state, ktime_to_ms(ktime_get()));
 		switch_set_state(&ds->sdev, val);
 	}
-    pr_notice("-dock_type %d\n", ds->dock_type);
 }
 
 static void dock_switch_work_virt_func(struct work_struct *work)
@@ -296,7 +293,7 @@ static irqreturn_t dock_switch_irq_handler(int irq, void *arg)
 {
 	struct dock_switch_device *ds = (struct dock_switch_device *)arg;
 
-    pr_notice("pins[%d] disable\n", irq);
+//    pr_notice("pins[%d]\n", irq);
     disable_irq_nosync(irq);
 
     if (irq == ds->dock_irq) {
@@ -611,7 +608,6 @@ static int dock_switch_resume(struct device *dev)
         	desc = irq_to_desc(ds->ign_irq);
             if(desc->depth == 0) {
             	disable_irq_nosync(ds->ign_irq);
-                ds->sched_irq = SWITCH_IGN;
                 pr_notice("disable wake source IGN[%d]\n", ds->ign_irq);
             }
             disable_irq_wake(ds->ign_irq);
@@ -620,13 +616,16 @@ static int dock_switch_resume(struct device *dev)
         	desc = irq_to_desc(ds->dock_irq);
             if(desc->depth == 0) {
             	disable_irq_nosync(ds->dock_irq);
-                ds->sched_irq |= SWITCH_DOCK;
                 pr_notice("disable wake source DOCK[%d]\n", ds->dock_irq);
             }
             disable_irq_wake(ds->dock_irq);
         }
     }
 
+    ds->sched_irq = SWITCH_IGN;
+    if (e_dock_type_smart != ds->dock_type) {
+        ds->sched_irq |= SWITCH_DOCK;
+    }
     pr_notice("sched reason[%u]\n", ds->sched_irq); 
 	schedule_work(&ds->work);
 

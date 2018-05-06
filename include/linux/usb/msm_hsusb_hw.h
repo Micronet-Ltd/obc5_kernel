@@ -59,6 +59,9 @@
 #define PORTSC_PTS_MASK         (3 << 30)
 #define PORTSC_PTS_ULPI         (2 << 30)
 #define PORTSC_PTS_SERIAL       (3 << 30)
+#define PORTSC_PSPD_HIGH        (1 << 27)
+#define PORTSC_PSPD_LOW         (1 << 26)
+#define PORTSC_PSPD_MASK        (3 << 26)  /* Port speed, 3 on reset */
 #define PORTSC_SPRT             (1 << 25) /* phy suspend mode */
 #define PORTSC_PHCD             (1 << 23) /* phy suspend mode */
 #define PORTSC_PP               (1 << 12)

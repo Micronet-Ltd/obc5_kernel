@@ -595,13 +595,17 @@
 &pm8916_chg {
 	status = "ok";
 	/* by skj */
-	qcom,vddmax-mv = <4185>;
-	qcom,vddsafe-mv = <4185>;
+	qcom,vddmax-mv = <4200>;
+	qcom,vddsafe-mv = <4200>;
 	qcom,vinmin-mv = <4200>;
 	qcom,cool-bat-mv = <4100>;
 	qcom,warm-bat-mv = <4100>;
+	qcom,ibatsafe-ma = <1050>;
 	qcom,disable-vbatdet-based-recharge;
 	qcom,charger-detect-eoc;	
+	qcom,vbat-to-vph-gpio = <&msm_gpio 62 0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&vbat_to_vph_default>;
 };
 
 / {
