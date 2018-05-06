@@ -47,6 +47,8 @@ extern int32_t gpio_in_register_notifier(struct notifier_block *nb);
 #define VIRT_GPIO_INIT	1
 #define VIRT_GPIO_ON	2
 
+#define RESTART_DEBOUNCE_MAX	16
+
 enum e_dock_type {
     e_dock_type_unspecified = -1,
     e_dock_type_basic,
@@ -55,7 +57,7 @@ enum e_dock_type {
 
 struct dock_switch_device {
 	struct  switch_dev sdev;
-    struct  work_struct work;
+    struct  delayed_work dwork;
 	int     dock_pin;
     int 	ign_pin;
     int     usb_switch_pin;
@@ -108,7 +110,7 @@ static inline int freq2pattern(int freq)
 {
     if (freq < (IG_LOW_PATTERN >> 1)) {
         return BASIC_PATTERN;
-    } else if (freq <= IG_LOW_PATTERN && HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN) < freq) {
+    } else if (freq <= HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) && HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN) <= freq) {
         return IG_LOW_PATTERN;
     } else if (freq <= HYST_PATTERN(IG_HI_PATTERN, SMART_PATTERN) && HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) < freq) {
         return IG_HI_PATTERN;
@@ -117,20 +119,22 @@ static inline int freq2pattern(int freq)
     return SMART_PATTERN; 
 }
 
-static void dock_switch_work_func(struct work_struct *work) 
+static void dock_switch_work_func(struct work_struct *w)
 {
-	struct dock_switch_device *ds = container_of(work, struct dock_switch_device, work);
+	struct dock_switch_device *ds = container_of(w, struct dock_switch_device, dwork.work);
     long long timer = ktime_to_ms(ktime_get());
     int val = 0;
     union power_supply_propval prop = {0,};
     struct irq_desc *desc;
+    static int restart_debounce = 0;
 
     if (e_dock_type_basic != ds->dock_type) {
         val = wait_for_stable_signal(ds->ign_pin, DEBOUNCE_INTERIM + PATERN_INTERIM);
         val = pulses2freq(val, PATERN_INTERIM);
         val = freq2pattern(val);
-        pr_notice("pattern[%d, %d] [%lld]%lld\n", val, gpio_get_value(ds->ign_pin), timer, ktime_to_ms(ktime_get()));
-        if (BASIC_PATTERN == val /* temporary for debug purposes only */&& ds->ign_active_l != gpio_get_value(ds->ign_pin)) {
+        if(!(restart_debounce % 2) || BASIC_PATTERN != val)
+        	pr_notice("pattern[%d, %d] [%lld]%lld [%d]\n", val, gpio_get_value(ds->ign_pin), timer, ktime_to_ms(ktime_get()),restart_debounce);
+        if (BASIC_PATTERN == val && (ds->ign_active_l != gpio_get_value(ds->ign_pin) || restart_debounce > RESTART_DEBOUNCE_MAX)) {
             val = 0;
             if (e_dock_type_smart == ds->dock_type) {
                 pr_notice("smart cradle unplagged %lld\n", ktime_to_ms(ktime_get()));
@@ -141,7 +145,7 @@ static void dock_switch_work_func(struct work_struct *work)
                 ds->dock_type = e_dock_type_unspecified;
                 ds->sched_irq |= SWITCH_DOCK;
             } else {
-                pr_notice("basic cradle attempt to be plugged %lld\n", ktime_to_ms(ktime_get()));
+                pr_notice("basic cradle attempt to be plugged %lld [%d]\n", ktime_to_ms(ktime_get()), restart_debounce);
                 ds->dock_type = e_dock_type_basic;
             }
 
@@ -200,8 +204,14 @@ static void dock_switch_work_func(struct work_struct *work)
                 pr_notice("switch usb connector %lld\n", ktime_to_ms(ktime_get()));
                 gpio_set_value(ds->usb_switch_pin, ds->dock_active_l);
             }
+        } else if (BASIC_PATTERN == val && ds->ign_active_l == gpio_get_value(ds->ign_pin)) {
+        	restart_debounce++;
+			//pr_notice("unknown cradle restart debounce %lld\n", ktime_to_ms(ktime_get()));
+			schedule_delayed_work(&ds->dwork, msecs_to_jiffies(15));
+			return;
         }
     }
+    restart_debounce = 0;
 
     if (e_dock_type_basic == ds->dock_type) {
         if (gpio_is_valid(ds->dock_pin)) {
@@ -252,9 +262,9 @@ static void dock_switch_work_func(struct work_struct *work)
 	}
 }
 
-static void dock_switch_work_virt_func(struct work_struct *work)
+static void dock_switch_work_virt_func(struct work_struct *w)
 {
-	struct dock_switch_device *ds  = container_of(work, struct dock_switch_device, work);
+	struct dock_switch_device *ds  = container_of(w, struct dock_switch_device, dwork.work);
     int val = 0, err;
 
     if (VIRT_GPIO_OFF == ds->virt_init)
@@ -304,7 +314,7 @@ static irqreturn_t dock_switch_irq_handler(int irq, void *arg)
         ds->sched_irq |= SWITCH_IGN;
     }
 
-    schedule_work(&ds->work);
+    schedule_delayed_work(&ds->dwork, 0);
 
 	return IRQ_HANDLED;
 }
@@ -324,13 +334,13 @@ static int32_t __ref dock_switch_ign_callback(struct notifier_block *nfb, unsign
     if (0 == reason) {
         pr_notice("%ld\n", reason);
 		ds->virt_init = VIRT_GPIO_INIT;
-   		schedule_work(&ds->work);
+		schedule_delayed_work(&ds->dwork, 0);
     } else if (1 == reason) {
         if (arg) {
         	val = *((unsigned long*)arg);
             pr_notice("%ld - %ld\n", reason, val);
         	if (val & (1 << ds->virt_gpio_offset)) {
-        		schedule_work(&ds->work);
+        		schedule_delayed_work(&ds->dwork, 0);
         	}
         }
     }
@@ -377,7 +387,7 @@ static int dock_switch_probe(struct platform_device *pdev)
 
             ds->usb_psy = power_supply_get_by_name("usb");
 
-            INIT_WORK(&ds->work, dock_switch_work_func);
+            INIT_DELAYED_WORK(&ds->dwork, dock_switch_work_func);
             wake_lock_init(&ds->wlock, WAKE_LOCK_SUSPEND, "switch_dock_wait_lock");
 
 			ds->dock_pin = err;
@@ -501,7 +511,7 @@ static int dock_switch_probe(struct platform_device *pdev)
 
 			ds->ign_active_l = 1;
 
-			INIT_WORK(&ds->work, dock_switch_work_virt_func);
+			INIT_DELAYED_WORK(&ds->dwork, dock_switch_work_virt_func);
 
 			ds->ignition_notifier.notifier_call = dock_switch_ign_callback;
 			err = gpio_in_register_notifier(&ds->ignition_notifier);
@@ -523,7 +533,7 @@ static int dock_switch_probe(struct platform_device *pdev)
         dev_set_drvdata(dev, ds);
         ds->sched_irq = SWITCH_DOCK | SWITCH_IGN;
         pr_notice("sched reason[%u]\n", ds->sched_irq);
-        schedule_work(&ds->work);
+        schedule_delayed_work(&ds->dwork, msecs_to_jiffies(3000));
 
         pr_notice("registered\n");
 
@@ -549,7 +559,7 @@ static int dock_switch_remove(struct platform_device *pdev)
 {
 	struct dock_switch_device *ds = platform_get_drvdata(pdev);
 
-    cancel_work_sync(&ds->work);
+	cancel_delayed_work_sync(&ds->dwork);
 
     switch_dev_unregister(&ds->sdev);
 
@@ -581,7 +591,7 @@ static int dock_switch_suspend(struct device *dev)
 {
 	struct dock_switch_device *ds = dev_get_drvdata(dev);
 
-	cancel_work_sync(&ds->work);
+	cancel_delayed_work_sync(&ds->dwork);
 
     if (device_may_wakeup(dev)) {
         if (ds->ign_irq) {
@@ -627,7 +637,7 @@ static int dock_switch_resume(struct device *dev)
         ds->sched_irq |= SWITCH_DOCK;
     }
     pr_notice("sched reason[%u]\n", ds->sched_irq); 
-	schedule_work(&ds->work);
+	schedule_delayed_work(&ds->dwork, 0);
 
 	return 0;
 }
