@@ -232,12 +232,16 @@ static void watchdog_toggle_work(struct work_struct *work)
     unsigned long d;
 
     if (0 != inf->suspend) {
+#if 0
         if (inf->high_delay == inf->low_delay) {
-            //d = (-1 == inf->suspend)?0:1;
-            d = (-1 == inf->suspend)?1:0;
+            d = (-1 == inf->suspend)?0:1;
+            //d = (-1 == inf->suspend)?1:0;
         } else {
             d = 0;
         }
+#else
+        d = 0;
+#endif
         gpio_set_value(inf->toggle_pin, (int)d);
         return;
     }
