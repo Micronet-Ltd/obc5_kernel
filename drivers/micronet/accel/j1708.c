@@ -27,12 +27,24 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 #define J1708_MAX_MSG_EVENTS 128
 #define J1708_MSG_PAYLOAD_SIZE 21
+#define J1708_MSG_PACKET_SIZE 24
 //#define J1708_DEBUG
 
+/* NOTES:         dev_in = mcu_j1708  | dev_out = j1708
+   (from MCU/iodriver) 	write_in    --|--> read_out   ex: cat /dev/j1708
+	(to MCU/iodriver)   read_in    <--|--  write_out  ex: echo 'j1708packet' > /dev/j1708
+
+   1. j1708 data comes from MCU to iodriver on /dev/ttyACM4. 
+   2. j1708 frame is parsed and sent to /dev/mcu_j1708
+   3. j1708 driver receives data at write_in, puts in a out_queue and read_out sends it /dev/j1708
+   4. j1708 reads in packets via write_out and puts it in in_queue and read_in sends it to /dev/mcu_j1708  
+ */
+
 // TODO: make continous allocation
-struct j1708_msg {
+struct j1708_msg { /* 1 + 21 + 2 = 24 */ 
     uint8_t len;
 	uint8_t data[J1708_MSG_PAYLOAD_SIZE];
+	uint8_t padding[2];
 };
 
 // typical queue implementation
@@ -58,11 +70,31 @@ static inline struct j1708_msg * queue_get_msg(struct j1708_msg_queue * queue)
 static void queue_add_msg(struct j1708_msg_queue * queue, struct j1708_msg * msg)
 {
 	queue->head = (queue->head + 1) % J1708_MAX_MSG_EVENTS;
-	if(queue->head == queue->tail)
+	if(queue->head == queue->tail){
+        pr_err("%s() q->head=q->tail %d\n", __func__, queue->head);
 		queue->tail = (queue->tail + 1) % J1708_MAX_MSG_EVENTS;
-
+	}
 	//queue->msgs[queue->head] = msg; // ptr
+
+    pr_err("%s() len %d, padding=%x, j1708msgSize=%d\n", __func__, msg->len, msg->padding[1], (unsigned int)sizeof(struct j1708_msg));
+	memset(&queue->msgs[queue->head], 0, sizeof(struct j1708_msg));
 	memcpy(&queue->msgs[queue->head], msg, sizeof(struct j1708_msg));
+
+#ifdef J1708_DEBUG
+	struct j1708_msg * msg_in_q;
+	char * c_msg_in_q;
+	int i;
+	msg_in_q = &(queue->msgs[queue->head]);
+
+	pr_err("%s() queue->msg[queue->head data], len = %d, padding[0]=%x, padding[1]=%x, sizeof(j1708_msg)=%d\n", 
+			__func__, msg_in_q->len, msg_in_q->padding[0], msg_in_q->padding[1], (int)sizeof(struct j1708_msg));
+	c_msg_in_q = (char *) msg_in_q;
+	for (i = 0; i < sizeof(struct j1708_msg); i++){
+	    pr_err("0x%02x, ", (uint8_t)*c_msg_in_q);
+		c_msg_in_q++;
+	}
+	pr_err("\n");
+#endif
 }
 
 struct virt_j1708 {
@@ -120,7 +152,8 @@ static ssize_t virt_j1708_chr_read_in(struct file * file, char __user * buf,
 
 	if (count >= J1708_MSG_PAYLOAD_SIZE) {
 		struct j1708_msg * pmsg = NULL;
-
+        
+		pr_err("%s(): got here1", __func__);
 		mutex_lock(&dev->queue_out.lock);
 		while(queue_empty(&dev->queue_out)) {
 			mutex_unlock(&dev->queue_out.lock);
@@ -134,7 +167,8 @@ static ssize_t virt_j1708_chr_read_in(struct file * file, char __user * buf,
 			memcpy(&msg, pmsg, sizeof(msg));
 
 		mutex_unlock(&dev->queue_out.lock);
-
+    	
+		pr_err("%s(): got here2, msg_len=%d", __func__, msg.len);
 		if(pmsg && msg.len) {
 #ifdef J1708_DEBUG
         {
@@ -142,7 +176,7 @@ static ssize_t virt_j1708_chr_read_in(struct file * file, char __user * buf,
             pr_err("%s() count %d\n", __func__, msg.len);
             pr_err("%s() data: ", __func__);
     		for (i = 0; i < msg.len; i++) {
-                pr_err("%x ", (unsigned int)(msg.data[i]));
+                pr_err("0x%02x, ", (unsigned int)(msg.data[i]));
     		}
             pr_err("\n");
     	}
@@ -161,7 +195,7 @@ static ssize_t virt_j1708_chr_write_in(struct file * file, const char __user * b
 		size_t count, loff_t * ppos)
 {
 	struct virt_j1708 * dev = file->private_data;
-	struct j1708_msg msg;
+	struct j1708_msg msg = {0};
 	ssize_t w = 0;
 
 	if(count > J1708_MSG_PAYLOAD_SIZE)
@@ -170,27 +204,26 @@ static ssize_t virt_j1708_chr_write_in(struct file * file, const char __user * b
 	// This will never block
     if(copy_from_user(msg.data, buf, count))
         return -EACCES;
-
+	
+	msg.len = (unsigned int)count;
 #ifdef J1708_DEBUG
     {
         int i;
-        pr_err("%s() count %x\n", __func__, (unsigned int)count);
-        pr_err("%s() data: ", __func__);
+        pr_err("%s() msg.len %d\n", __func__, msg.len);
+        pr_err("%s() msg.data: ", __func__);
 		for (i = 0; i < count; i++) {
-            pr_err("%x ", (unsigned int)(msg.data[i]));
+            pr_err("0x%02x ", (unsigned int)(msg.data[i]));
 		}
         pr_err("\n");
 	}
 #endif
-
-    msg.len = count;
 
     mutex_lock(&dev->queue_in.lock);
     queue_add_msg(&dev->queue_in, &msg);
     mutex_unlock(&dev->queue_in.lock);
 
     wake_up_interruptible(&dev->queue_in.wq);
-    w += count;
+    w += J1708_MSG_PACKET_SIZE ;
 
 	return w;
 }
@@ -216,7 +249,6 @@ static ssize_t virt_j1708_chr_read_out(struct file * file, char __user * buf,
 {
 	struct virt_j1708 * dev = file->private_data;//&g_virt_j1708_mcu_dev;
     struct j1708_msg msg = {0};
-	//uint8_t data[J1708_MSG_PAYLOAD_SIZE];
 	int read_count = 0;
 
 	if(count < J1708_MSG_PAYLOAD_SIZE) {
@@ -232,7 +264,7 @@ static ssize_t virt_j1708_chr_read_out(struct file * file, char __user * buf,
 			mutex_unlock(&dev->queue_in.lock);
 			if((file->f_flags &  O_NONBLOCK))
 				return -EAGAIN;
-			wait_event_interruptible(dev->queue_in.wq, !queue_empty(&dev->queue_out));
+			wait_event_interruptible(dev->queue_in.wq, !queue_empty(&dev->queue_in));
 			mutex_lock(&dev->queue_in.lock);
 		}
 
@@ -243,20 +275,22 @@ static ssize_t virt_j1708_chr_read_out(struct file * file, char __user * buf,
 
 		if(pmsg && msg.len) {
 #ifdef J1708_DEBUG
-        {
+        {   
+			char * c_msg = (char *)&msg;
             int i;
-            pr_err("%s() count %d\n", __func__, msg.len);
+            pr_err("%s() msg.len=%d, msgSize=%d\n", __func__, msg.len, (unsigned int)sizeof(msg));
             pr_err("%s() data: ", __func__);
-    		for (i = 0; i < msg.len; i++) {
-                pr_err("%x ", (unsigned int)(msg.data[i]));
+    		for (i = 0; i < sizeof(msg); i++) {
+                pr_err("0x%02x,  ", (unsigned int)*c_msg);
+				c_msg++;
     		}
             pr_err("\n");
     	}
 #endif
-			if(copy_to_user(buf + read_count, msg.data, msg.len))
+			if(copy_to_user(buf + read_count, &msg, J1708_MSG_PACKET_SIZE))
 				return -EINVAL;
 
-			read_count += J1708_MSG_PAYLOAD_SIZE;
+			read_count += J1708_MSG_PACKET_SIZE;
 		}
 	}
 
@@ -267,7 +301,7 @@ static ssize_t virt_j1708_chr_write_out(struct file * file, const char __user * 
 		size_t count, loff_t * ppos)
 {
 	struct virt_j1708 * dev = file->private_data;
-	struct j1708_msg msg;
+	struct j1708_msg msg = {0};
 	ssize_t w = 0;
 
 	if(count > J1708_MSG_PAYLOAD_SIZE)
@@ -276,13 +310,14 @@ static ssize_t virt_j1708_chr_write_out(struct file * file, const char __user * 
     if(copy_from_user(msg.data, buf, count))
         return -EACCES;
 
+	msg.len = (unsigned int)count;
 #ifdef J1708_DEBUG
     {
         int i;
-        pr_err("%s() count %x\n", __func__, (unsigned int)count);
-        pr_err("%s() data: ", __func__);
+        pr_err("%s() msg.len %d\n", __func__, msg.len);
+        pr_err("%s() msg.data: ", __func__);
 		for (i = 0; i < count; i++) {
-            pr_err("%x ", (unsigned int)(msg.data[i]));
+            pr_err("0x%02x ", (unsigned int)(msg.data[i]));
 		}
         pr_err("\n");
 	}
@@ -293,7 +328,7 @@ static ssize_t virt_j1708_chr_write_out(struct file * file, const char __user * 
     mutex_unlock(&dev->queue_out.lock);
 
     wake_up_interruptible(&dev->queue_out.wq);
-    w += count;
+    w += J1708_MSG_PACKET_SIZE;
 
 	return w;
 } 
