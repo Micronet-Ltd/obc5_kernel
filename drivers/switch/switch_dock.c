@@ -36,7 +36,7 @@ extern int32_t gpio_in_register_notifier(struct notifier_block *nb);
 #define SWITCH_DOCK	(1 << 0)
 #define SWITCH_IGN  (1 << 1)
 
-#define DEBOUNCE_INTERIM  500
+#define DEBOUNCE_INTERIM  200 //500
 #define PATERN_INTERIM    100
 #define BASIC_PATTERN     0
 #define SMART_PATTERN     1000
@@ -103,10 +103,11 @@ static inline int pulses2freq(int pulses, int interim)
     return 1000 * pulses / interim;
 }
 
-#define HYST_PATTERN(p1, p2) ((p2) - (((p2) - (p1)) >> 1))
+//#define HYST_PATTERN(p1, p2) ((p2) - (((p2) - (p1)) >> 1))
+#define HYST_PATTERN(p1, p2) ((p1) + (((p2) - (p1)) >> 2))
 static inline int freq2pattern(int freq)
 {
-    if (freq < (IG_LOW_PATTERN >> 1)) {
+    if (freq < HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN)) {
         return BASIC_PATTERN;
     } else if (freq <= HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) && HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN) <= freq) {
         return IG_LOW_PATTERN;
