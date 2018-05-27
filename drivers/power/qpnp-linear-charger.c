@@ -385,6 +385,7 @@ struct qpnp_lbc_chip {
 	struct delayed_work		parallel_work;
     unsigned int vbat_to_vph_pin;
     int vbat_to_vph;
+	int vbat_to_vph_dbg_en;
 };
 
 static void qpnp_lbc_enable_irq(struct qpnp_lbc_chip *chip,
@@ -1885,7 +1886,7 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
 	}
 #else
     if (temp >= chip->cfg_warm_bat_decidegc) {
-        pr_notice("reach warm[%d] wait for normal %d", temp, chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC);
+        pr_notice("reach hot[%d] wait for normal %d", temp, chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC);
         /* Warm to normal*/
         bat_hot = bat_warm = 1;
         bat_cool = 0;
@@ -1894,30 +1895,30 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
         chip->adc_param.state_request = ADC_TM_COOL_THR_ENABLE;
     } else if (temp > chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC) {
         /* Normal to warm or cool*/
-        pr_notice("reach normal[%d] wait for cool or warm[%d] %d, %d", temp, chip->bat_is_warm, chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC, chip->cfg_warm_bat_decidegc);
+        pr_notice("reach warm[%d] wait for cool or warm[%d] %d, %d", temp, chip->bat_is_warm, chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC, chip->cfg_warm_bat_decidegc);
         bat_warm = (chip->bat_is_warm)?1:0; 
         bat_cool = 0;
 
         chip->adc_param.low_temp = chip->cfg_warm_bat_decidegc - HYSTERISIS_DECIDEGC;
         chip->adc_param.high_temp = chip->cfg_warm_bat_decidegc;
         chip->adc_param.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
-    } else if (temp < chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC) {
+	} else if (temp <= chip->cfg_cool_bat_decidegc) {
+		/* Cool to normal*/
+		pr_notice("reach frozen[%d] wait for warm %d", temp, chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC);
+		bat_warm = 0;
+		bat_frozen = bat_cool = 1;
+		chip->adc_param.low_temp = chip->cfg_cool_bat_decidegc;
+		chip->adc_param.high_temp = chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC;
+		chip->adc_param.state_request = ADC_TM_WARM_THR_ENABLE;
+	} else if (temp < chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC) {
         /* Normal to warm or cool*/
-        pr_notice("reach normal[%d] wait for cool or warm[%d] %d, %d", temp, chip->bat_is_cool, chip->cfg_cool_bat_decidegc, chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC);
+        pr_notice("reach cool[%d] wait for cool or warm[%d] %d, %d", temp, chip->bat_is_cool, chip->cfg_cool_bat_decidegc, chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC);
         bat_warm = 0;
         bat_cool = (chip->bat_is_cool)?1:0;
 
         chip->adc_param.low_temp = chip->cfg_cool_bat_decidegc;
         chip->adc_param.high_temp = chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC;
         chip->adc_param.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
-    } else if (temp <= chip->cfg_cool_bat_decidegc) {
-        /* Cool to normal*/
-        pr_notice("reach cool[%d] wait for warm %d", temp, chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC);
-        bat_warm = 0;
-        bat_frozen = bat_cool = 1;
-        chip->adc_param.low_temp = chip->cfg_cool_bat_decidegc;
-        chip->adc_param.high_temp = chip->cfg_cool_bat_decidegc + HYSTERISIS_DECIDEGC;
-        chip->adc_param.state_request = ADC_TM_WARM_THR_ENABLE;
     } else {
         /* Normal to warm or cool*/
         pr_notice("reach normal [%d] wait for cool or warm %d, %d", temp, chip->cfg_cool_bat_decidegc, chip->cfg_warm_bat_decidegc);
@@ -1942,15 +1943,24 @@ static void qpnp_lbc_jeita_adc_notification(enum qpnp_tm_state state, void *ctx)
         if (!!chip->charger_disabled) {
             if (!(chip->bat_is_warm || chip->bat_is_cool)) {
                 qpnp_lbc_charger_enable(chip, THERMAL, 1); 
-            }
+            } else if (qpnp_lbc_is_usb_chg_plugged_in(chip)) {
+                if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+                    pr_notice("switch vbus-to-vph\n");
+                    chip->vbat_to_vph = 0;
+					qpnp_lbc_charger_enable(chip, THERMAL, 1); 
+					qpnp_lbc_vddmax_set(chip, chip->cfg_safe_voltage_mv);
+					qpnp_lbc_ibatmax_set(chip, chip->cfg_safe_current);
+                    gpio_set_value(chip->vbat_to_vph_pin, chip->vbat_to_vph);
+                }
+			}
         } else {
             if ((chip->bat_is_warm || chip->bat_is_cool)  && (bat_hot || bat_frozen)) {
                 if (gpio_is_valid(chip->vbat_to_vph_pin)) {
                     pr_notice("switch vbus-to-vph\n");
                     chip->vbat_to_vph = 0;
+					qpnp_lbc_vddmax_set(chip, chip->cfg_safe_voltage_mv);
+					qpnp_lbc_ibatmax_set(chip, chip->cfg_safe_current);
                     gpio_set_value(chip->vbat_to_vph_pin, chip->vbat_to_vph);
-                    qpnp_lbc_vddmax_set(chip, chip->cfg_safe_voltage_mv);
-                    qpnp_lbc_ibatmax_set(chip, chip->cfg_safe_current);
                 } else {
                     qpnp_lbc_charger_enable(chip, THERMAL, 0); 
                 }
@@ -2256,6 +2266,118 @@ static int qpnp_lbc_config_open(struct inode *inode, struct file *file)
 static const struct file_operations qpnp_lbc_config_debugfs_ops = {
 	.owner		= THIS_MODULE,
 	.open		= qpnp_lbc_config_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int qpnp_lbc_vbat_debug_show(struct seq_file *m, void *data)
+{
+	struct qpnp_lbc_chip *chip = m->private;
+
+	seq_printf(m, "vbat-to-vph debug %s\n", (chip->vbat_to_vph_dbg_en)?"enabled":"disabled");
+
+	return 0;
+}
+
+static int qpnp_lbc_vbat_debug_open(struct inode *inode, struct file *file)
+{
+	struct qpnp_lbc_chip *chip = inode->i_private;
+
+	return single_open(file, qpnp_lbc_vbat_debug_show, chip);
+}
+
+static ssize_t qpnp_lbc_vbat_debug_write(struct file *file, const char __user *u, size_t count, loff_t *ppos)
+{
+	struct qpnp_lbc_chip *chip = ((struct seq_file *)file->private_data)->private;
+	char ub[4] = {0};
+
+    if (count > 3) {
+		pr_err("too long input [%d]\n", (int)count);
+		return -EINVAL;
+    }
+
+	if (copy_from_user(ub, u, count))
+		return -EFAULT;
+
+    if ((int)(ub[0] - '0') > 1) {
+		pr_err("%s not number\n", ub);
+		return -EINVAL;
+    }
+
+    if (chip->vbat_to_vph_dbg_en != (int)(ub[0] - '0')) {
+		chip->vbat_to_vph_dbg_en = (int)(ub[0] - '0');
+		chip->vbat_to_vph = (0 == chip->vbat_to_vph_dbg_en);
+
+		if (gpio_is_valid(chip->vbat_to_vph_pin)) {
+			qpnp_lbc_charger_enable(chip, SOC, 1);
+			gpio_set_value(chip->vbat_to_vph_pin, chip->vbat_to_vph);
+            if (chip->vbat_to_vph) {
+				pr_notice("switch vbat-to-vph\n");
+				qpnp_lbc_vddmax_set(chip, chip->cfg_safe_voltage_mv);
+				qpnp_lbc_ibatmax_set(chip, chip->usb_psy_ma);
+            } else {
+				pr_notice("switch vbus-to-vph\n"); 
+				qpnp_lbc_vddmax_set(chip, chip->cfg_safe_voltage_mv);
+				qpnp_lbc_ibatmax_set(chip, chip->usb_psy_ma);
+			}
+		}
+    }
+	return count;
+}
+
+static const struct file_operations qpnp_lbc_vbat_debug_debugfs_ops = {
+	.owner		= THIS_MODULE,
+	.open		= qpnp_lbc_vbat_debug_open,
+	.read		= seq_read,
+	.write 		= qpnp_lbc_vbat_debug_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int qpnp_lbc_vbat_show(struct seq_file *m, void *data)
+{
+	struct qpnp_lbc_chip *chip = m->private;
+
+	seq_printf(m, "%d uV\n", get_prop_battery_voltage_now(chip));
+
+	return 0;
+}
+
+static int qpnp_lbc_vbat_open(struct inode *inode, struct file *file)
+{
+	struct qpnp_lbc_chip *chip = inode->i_private;
+
+	return single_open(file, qpnp_lbc_vbat_show, chip);
+}
+
+static const struct file_operations qpnp_lbc_vbat_debugfs_ops = {
+	.owner		= THIS_MODULE,
+	.open		= qpnp_lbc_vbat_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int qpnp_lbc_ibat_show(struct seq_file *m, void *data)
+{
+	struct qpnp_lbc_chip *chip = m->private;
+
+	seq_printf(m, "%d uA\n", get_prop_current_now(chip));
+
+	return 0;
+}
+
+static int qpnp_lbc_ibat_open(struct inode *inode, struct file *file)
+{
+	struct qpnp_lbc_chip *chip = inode->i_private;
+
+	return single_open(file, qpnp_lbc_ibat_show, chip);
+}
+
+static const struct file_operations qpnp_lbc_ibat_debugfs_ops = {
+	.owner		= THIS_MODULE,
+	.open		= qpnp_lbc_ibat_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -3146,6 +3268,7 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 	chip->spmi = spmi;
 	chip->fake_battery_soc = -EINVAL;
     chip->vbat_to_vph = 1;
+	chip->vbat_to_vph_dbg_en = 0;
 	dev_set_drvdata(&spmi->dev, chip);
 	device_init_wakeup(&spmi->dev, 1);
 	mutex_init(&chip->jeita_configure_lock);
@@ -3310,6 +3433,16 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 					  &qpnp_lbc_config_debugfs_ops);
 		if (!ent)
 			pr_err("Couldn't create lbc_config debug file\n");
+
+		ent = debugfs_create_file("lbc_vbat2vph_debug", S_IFREG | S_IRUGO | S_IWUGO, chip->debug_root, chip, &qpnp_lbc_vbat_debug_debugfs_ops);
+		if (!ent)
+			pr_err("Couldn't create lbc_vbat2vph_debug file\n");
+		ent = debugfs_create_file("lbc_vbat_now", S_IFREG | S_IRUGO, chip->debug_root, chip, &qpnp_lbc_vbat_debugfs_ops);
+		if (!ent)
+			pr_err("Couldn't create lbc_vbat file\n");
+		ent = debugfs_create_file("lbc_acc_ibat", S_IFREG | S_IRUGO, chip->debug_root, chip, &qpnp_lbc_ibat_debugfs_ops);
+		if (!ent)
+			pr_err("Couldn't create lbc_vbat file\n");
 	}
 
 	pr_notice("chg_dis=%d bpd=%d usb=%d batt_pres=%d batt_volt=%d soc=%d\n",
