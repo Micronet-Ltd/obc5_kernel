@@ -136,7 +136,7 @@ static ssize_t ampl_show(struct device *dev, struct device_attribute *attr, char
 	return sprintf(buf, "%d\n", ds->ampl_enable);
 }
 
-static DEVICE_ATTR(ampl_enable, S_IRUGO | S_IWUSR, ampl_show, ampl_store);
+static DEVICE_ATTR(ampl_enable, S_IRUGO | S_IWUGO, ampl_show, ampl_store);
 /////////////
 static int wait_for_stable_signal(int pin, int interim)
 {
