@@ -167,8 +167,8 @@ static inline int pulses2freq(int pulses, int interim)
     return 1000 * pulses / interim;
 }
 
-//#define HYST_PATTERN(p1, p2) ((p2) - (((p2) - (p1)) >> 1))
-#define HYST_PATTERN(p1, p2) ((p1) + (((p2) - (p1)) >> 2))
+#define HYST_PATTERN(p1, p2) ((p2) - (((p2) - (p1)) >> 1))
+//#define HYST_PATTERN(p1, p2) ((p1) + (((p2) - (p1)) >> 2))
 static inline int freq2pattern(int freq)
 {
     if (freq < HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN)) {
