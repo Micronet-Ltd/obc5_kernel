@@ -45,6 +45,8 @@
 #include "wcd-mbhc-v2.h"
 #include "msm8916-wcd-irq.h"
 #include "msm8x16_wcd_registers.h"
+#include <linux/syscalls.h>
+#include <linux/usb.h>
 
 #define MSM8X16_WCD_RATES (SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |\
 			SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_48000)
@@ -197,6 +199,8 @@ static const struct wcd_mbhc_intr intr_ids = {
 	.hph_left_ocp = MSM8X16_WCD_IRQ_HPHL_OCP,
 	.hph_right_ocp = MSM8X16_WCD_IRQ_HPHR_OCP,
 };
+struct notifier_block usbdev_nb;
+
 
 static int msm8x16_wcd_dt_parse_vreg_info(struct device *dev,
 	struct msm8x16_wcd_regulator *vreg,
@@ -213,6 +217,7 @@ static void msm8x16_wcd_set_auto_zeroing(struct snd_soc_codec *codec,
 static void msm8x16_wcd_configure_cap(struct snd_soc_codec *codec,
 		bool micbias1, bool micbias2);
 static void msm8x16_skip_imped_detect(struct snd_soc_codec *codec);
+static void speak_ctrl_pa_sw(int enable);
 
 struct msm8x16_wcd_spmi msm8x16_wcd_modules[MAX_MSM8X16_WCD_DEVICE];
 
@@ -223,17 +228,105 @@ static struct snd_soc_codec *registered_codec;
 DEFINE_MUTEX(pa_sw_mutex); // by skj
 
 static int speak_ctrl_pa_sw_hw_last;
+static int speak_ctrl_ext_ampl_enable(int enable)
+{
+    int 	fd, ret = -1;
+    char	str[8] = {0};
 
+    mm_segment_t old_fs = get_fs();
+    set_fs(KERNEL_DS);
+
+    fd = sys_open("/sys/class/switch/dock/ampl_enable", O_WRONLY, 0);
+    if (fd < 0) {
+    	pr_info("/sys/class/switch/dock/ampl_enable failed [%d]\n", fd);
+        set_fs(old_fs);
+        return ret;
+    }
+    sprintf(str, "%d", enable);
+    if(sys_write(fd, str, 1) > 0) {
+    	ret = 0;
+    }
+    //pr_notice("%s: str %s\n", __func__, str);
+    sys_close(fd);
+
+    set_fs(old_fs);
+    return ret;
+}
+static int speak_ctrl_is_in_cradle(void)
+{
+    int 	fd;
+    char 	sys_scope[] = "System";
+    char	str[8] = {0};
+    int 	ret = 0;
+
+    mm_segment_t old_fs = get_fs();
+    set_fs(KERNEL_DS);
+
+    fd = sys_open("/sys/class/power_supply/usb/scope", O_RDONLY, 0);
+    if (fd < 0) {
+    	pr_info("/sys/class/power_supply/usb/scope is not exist\n");
+        set_fs(old_fs);
+        return 0;
+    }
+    sys_read(fd, str, strlen(sys_scope));
+    sys_close(fd);
+//	pr_notice("%s: str %s\n", __func__, str);
+
+    if(0 != strcmp(str, sys_scope)) {
+    	return 0;
+    }
+    fd = sys_open("/sys/class/power_supply/usb/present", O_RDONLY, 0);
+    if (fd < 0) {
+        set_fs(old_fs);
+    	pr_info("/sys/class/power_supply/usb/present is not exist\n");
+        return 0;
+    }
+    str[0] = 0;
+    sys_read(fd, str, 1);
+    sys_close(fd);
+    if('1' == str[0]){
+    	ret = 1;
+    }
+
+    set_fs(old_fs);
+    return ret;
+}
+static int speak_ctrl_usbdev_notify(struct notifier_block *self,
+			unsigned long action, void *priv)
+{
+	if(current_ext_spk_pa_state) {
+		if(USB_DEVICE_REMOVE == action || USB_DEVICE_ADD == action) {
+			speak_ctrl_pa_sw(1);
+		}
+	}
+	return NOTIFY_OK;
+}
+///
 static void speak_ctrl_pa_sw_hw(int enable)
 {
+	int in_smart_cradle = speak_ctrl_is_in_cradle();
+	pr_info("%s: in_smart_cradle %d, enable %d\n", __func__, in_smart_cradle, enable);
 	mutex_lock(&pa_sw_mutex);	
 	//printk("speak_ctrl_pa_sw_hw enable=%d\n",enable);
-	if(0==enable){		
+	if(0==enable){
+		if(in_smart_cradle) {
+			speak_ctrl_ext_ampl_enable(0);
+		}
 		if(gpio_is_valid(ext_spk_pa_gpio))
 			gpio_direction_output(ext_spk_pa_gpio, 0);
 		mdelay(10);
 		if(gpio_is_valid(hp_spk_switch_gpio))
 			gpio_direction_output(hp_spk_switch_gpio, 0);
+	}else if(in_smart_cradle){
+		if(gpio_is_valid(hp_spk_switch_gpio))
+			gpio_direction_output(hp_spk_switch_gpio, 1);
+		mdelay(10);
+		if(gpio_is_valid(ext_spk_pa_gpio))
+			gpio_direction_output(ext_spk_pa_gpio, 0);
+		if(speak_ctrl_ext_ampl_enable(1) < 0) {//if failed - enable internal
+			if(gpio_is_valid(ext_spk_pa_gpio))
+				gpio_direction_output(ext_spk_pa_gpio, 1);
+		}
 	}else{
 		if(gpio_is_valid(hp_spk_switch_gpio))
 			gpio_direction_output(hp_spk_switch_gpio, 1);
@@ -4490,6 +4583,10 @@ static int msm8x16_wcd_codec_probe(struct snd_soc_codec *codec)
 		registered_codec = NULL;
 		return -ENOMEM;
 	}
+
+	usbdev_nb.notifier_call = speak_ctrl_usbdev_notify;
+	usb_register_notify(&usbdev_nb);
+
 	return 0;
 }
 
@@ -4506,6 +4603,8 @@ static int msm8x16_wcd_codec_remove(struct snd_soc_codec *codec)
 	iounmap(msm8x16_wcd->dig_base);
 	kfree(msm8x16_wcd_priv->fw_data);
 	kfree(msm8x16_wcd_priv);
+
+	usb_unregister_notify(&usbdev_nb);
 
 	return 0;
 }
