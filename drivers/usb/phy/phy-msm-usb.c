@@ -60,7 +60,7 @@
 
 #define ID_TIMER_FREQ		(jiffies + msecs_to_jiffies(500))
 #define CHG_RECHECK_DELAY	(jiffies + msecs_to_jiffies(2000))
-#define OTG_SUSPEND_WAKE_LOCK_DELAY 5000 //minimal suspend timeout
+#define OTG_SUSPEND_WAKE_LOCK_DELAY 6000 //minimal suspend timeout
 #define ULPI_IO_TIMEOUT_USEC	(10 * 1000)
 #define USB_PHY_3P3_VOL_MIN	3050000 /* uV */
 #define USB_PHY_3P3_VOL_MAX	3300000 /* uV */
@@ -956,6 +956,7 @@ static void msm_otg_host_hnp_enable(struct usb_otg *otg, bool enable)
 	struct usb_hcd *hcd = bus_to_hcd(otg->host);
 	struct usb_device *rhub = otg->host->root_hub;
 
+    pr_notice("\n");
 	if (enable) {
 		pm_runtime_disable(&rhub->dev);
 		rhub->state = USB_STATE_NOTATTACHED;
@@ -1716,6 +1717,7 @@ static int msm_otg_resume(struct msm_otg *motg)
 #else
 	wake_lock(&motg->wlock);
 #endif
+    dev_notice(phy->dev, "Wake lock USB for %d\n", OTG_SUSPEND_WAKE_LOCK_DELAY);
 
 	/*
 	 * If we are resuming from the device bus suspend, restore
@@ -1777,8 +1779,10 @@ static int msm_otg_resume(struct msm_otg *motg)
 	 * PHY comes out of low power mode (LPM) in case of wakeup
 	 * from asynchronous interrupt.
 	 */
-	if (!(readl_relaxed(USB_PORTSC) & PORTSC_PHCD))
+	if (!(readl_relaxed(USB_PORTSC) & PORTSC_PHCD)) {
+        dev_notice(phy->dev, "skip resume\n");
 		goto skip_phy_resume;
+    }
 
 	in_device_mode =
 		phy->otg->gadget &&
@@ -1884,7 +1888,7 @@ skip_phy_resume:
 	if (motg->host_bus_suspend)
 		usb_hcd_resume_root_hub(hcd);
 
-	dev_info(phy->dev, "USB exited from low power mode\n");
+	dev_notice(phy->dev, "USB exited from low power mode\n");
 	msm_otg_dbg_log_event(phy, "LPM EXIT DONE",
 			motg->caps, motg->lpm_flags);
 
@@ -1977,6 +1981,7 @@ static int msm_otg_notify_power_supply(struct msm_otg *motg, unsigned mA)
 			goto psy_error;
 	} else if (motg->cur_power >= 0 && (mA == 0 || mA == 2)) {
 		/* Disable charging */
+		pr_notice("Disable charging\n");
 		if (power_supply_set_online(psy, false))
 			goto psy_error;
 		/* Set max current limit in uA */
@@ -2064,7 +2069,7 @@ static int msm_otg_set_power(struct usb_phy *phy, unsigned mA)
 	 * IDEV_CHG can be drawn irrespective of suspend/un-configured
 	 * states when CDP/ACA is connected.
 	 */
-	if (motg->chg_type == USB_SDP_CHARGER)
+	if (motg->smart_cradle_plagged || motg->chg_type == USB_SDP_CHARGER)
 		msm_otg_notify_charger(motg, mA);
 
 	return 0;
@@ -2189,11 +2194,19 @@ static void msm_hsusb_vbus_power(struct msm_otg *motg, bool on)
 {
 	int ret;
 	static bool vbus_is_on;
+	static int last_on_smart_cradle = 0;
 
 	msm_otg_dbg_log_event(&motg->phy, "VBUS POWER", on, vbus_is_on);
 	if (vbus_is_on == on)
 		return;
+	if(motg->smart_cradle_plagged || last_on_smart_cradle) {
+		msm_otg_notify_host_mode(motg, on);
+		vbus_is_on = on;
+		last_on_smart_cradle = on ? 1 : 0;
+		return;
+	}
 
+	pr_notice("VBUS POWER %d (it was %d)\n", on, vbus_is_on);
 	if (motg->pdata->vbus_power) {
 		ret = motg->pdata->vbus_power(on);
 		if (!ret)
@@ -2598,11 +2611,12 @@ static void msm_otg_chg_check_timer_func(unsigned long data)
 		!test_bit(B_SESS_VLD, &motg->inputs) ||
 		otg->phy->state != OTG_STATE_B_PERIPHERAL ||
 		otg->gadget->speed != USB_SPEED_UNKNOWN) {
-		pr_notice("Nothing to do in chg_check_timer[%d, H%lx, %d, %d]\n", motg->in_lpm.counter, motg->inputs, otg->phy->state, otg->gadget->speed);
+		dev_dbg(otg->phy->dev, "Nothing to do in chg_check_timer[%d, H%lx, %d, %d]\n", motg->in_lpm.counter, motg->inputs, otg->phy->state, otg->gadget->speed);
 		return;
 	}
 
     psc = readl_relaxed(USB_PORTSC);
+    dev_notice(otg->phy->dev, "port status[%x]\n", psc);
 	if ((psc & PORTSC_LS) == PORTSC_LS) {
         dev_dbg(otg->phy->dev, "DCP is detected as SDP\n");
 		msm_otg_dbg_log_event(&motg->phy, "DCP IS DETECTED AS SDP",
@@ -3558,7 +3572,8 @@ static void msm_otg_sm_work(struct work_struct *w)
 		break;
 	case OTG_STATE_B_PERIPHERAL:
 		if (test_bit(B_SESS_VLD, &motg->inputs) &&
-				test_bit(B_FALSE_SDP, &motg->inputs)) {
+				(test_bit(B_FALSE_SDP, &motg->inputs) || motg->smart_cradle_plagged)) {
+//				test_bit(B_FALSE_SDP, &motg->inputs)) {
 			pr_debug("B_FALSE_SDP\n");
 			msm_otg_dbg_log_event(&motg->phy, "B_FALSE_SDP",
 					motg->inputs, otg->phy->state);
@@ -4712,7 +4727,7 @@ static int otg_power_get_property_usb(struct power_supply *psy,
 		val->intval = motg->current_max;
 		break;
 	case POWER_SUPPLY_PROP_PRESENT:
-		val->intval = !!test_bit(B_SESS_VLD, &motg->inputs);
+		val->intval = !!test_bit(B_SESS_VLD, &motg->inputs) || motg->smart_cradle_plagged;
 		break;
 	/* Reflect USB enumeration */
 	case POWER_SUPPLY_PROP_ONLINE:
@@ -4731,6 +4746,9 @@ static int otg_power_get_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 		val->intval = otg_get_prop_usbin_voltage_now(motg);
 		break;
+    case POWER_SUPPLY_PROP_CHARGE_ENABLED:
+        val->intval = motg->smart_cradle_plagged;
+        break;
 	default:
 		return -EINVAL;
 	}
@@ -4811,6 +4829,14 @@ static int otg_power_set_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_HEALTH:
 		motg->usbin_health = val->intval;
 		break;
+    case POWER_SUPPLY_PROP_CHARGE_ENABLED: {
+        struct usb_otg *otg = motg->phy.otg;
+        motg->smart_cradle_plagged = val->intval;
+        if (otg) {
+            msm_otg_set_power(otg->phy, (motg->smart_cradle_plagged) ? IDEV_ACA_DOCK_CHARGER : 0);
+        }
+        break;
+    }
 	default:
 		return -EINVAL;
 	}
@@ -4827,7 +4853,8 @@ static int otg_power_property_is_writeable_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PRESENT:
 	case POWER_SUPPLY_PROP_ONLINE:
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
-	case POWER_SUPPLY_PROP_CURRENT_MAX:
+    case POWER_SUPPLY_PROP_CURRENT_MAX:
+    case POWER_SUPPLY_PROP_CHARGE_ENABLED:
 		return 1;
 	default:
 		break;
@@ -4849,6 +4876,7 @@ static enum power_supply_property otg_pm_power_props_usb[] = {
 	POWER_SUPPLY_PROP_SCOPE,
 	POWER_SUPPLY_PROP_TYPE,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+    POWER_SUPPLY_PROP_CHARGE_ENABLED,
 };
 
 const struct file_operations msm_otg_bus_fops = {

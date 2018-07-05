@@ -355,6 +355,10 @@
 		qcom,ext-spk-amp-gpio = <&msm_gpio 16 0>;
 		qcom,hp-spk-switch-gpio = <&msm_gpio 3 0>;
 	};
+	virtual_leds {
+		compatible = "virtual-leds";
+		status = "okay";
+	};
 /*
 	a8_power_lost_hm {
 		compatible = "a8-hm-power-lost";
@@ -381,6 +385,10 @@
 		interrupt-names = "docking", "ignition";
 		interrupt-parent = <&msm_gpio>;
 		interrupts = <&msm_gpio 49 1>, <&msm_gpio 69 1>;
+		status = "okay";
+	};
+	suspend_tm {
+		compatible = "suspend-timeout";
 		status = "okay";
 	};
 };
