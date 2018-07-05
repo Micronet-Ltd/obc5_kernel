@@ -79,6 +79,8 @@ static int wait_for_stable_signal(int pin, int interim)
     long long timer;
     int pulses = 0, state = 0;
 
+//    long long start_time = 0, end_time = 0;
+
     timer = ktime_to_ms(ktime_get()) + interim;
 
     if (gpio_is_valid(pin)) {
@@ -88,12 +90,17 @@ static int wait_for_stable_signal(int pin, int interim)
                 state ^= 1;
 //                pr_notice("detcted %d pulses %lld\n", pulses, ktime_to_ms(ktime_get()));
                 pulses++;
+                ///temp!!!
+//                if(1==pulses)
+//                	start_time = ktime_to_ms(ktime_get());
+//               	end_time = ktime_to_ms(ktime_get());
             }
         } while (ktime_to_ms(ktime_get()) < timer);
     }
     pulses >>= 1;
 
     pr_notice("detcted %d pulses %lld\n", pulses, ktime_to_ms(ktime_get()));
+ //   pr_notice("detcted %d pulses %lld (delta %lld)\n", pulses, ktime_to_ms(ktime_get()), (end_time - start_time));
     return pulses;
 }
 
@@ -107,9 +114,9 @@ static inline int pulses2freq(int pulses, int interim)
 //#define HYST_PATTERN(p1, p2) ((p1) + (((p2) - (p1)) >> 2))
 static inline int freq2pattern(int freq)
 {
-    if (freq < HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN)) {
+    if (freq < IG_LOW_PATTERN - pulses2freq(2, PATERN_INTERIM)) {//HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN)) {
         return BASIC_PATTERN;
-    } else if (freq <= HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) && HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN) <= freq) {
+    } else if (freq <= HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) && IG_LOW_PATTERN - pulses2freq(2, PATERN_INTERIM) <= freq) {
         return IG_LOW_PATTERN;
     } else if (freq <= HYST_PATTERN(IG_HI_PATTERN, SMART_PATTERN) && HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) < freq) {
         return IG_HI_PATTERN;

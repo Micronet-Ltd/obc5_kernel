@@ -214,7 +214,7 @@
 			qcom,pin-func = <0>;
 		        label = "switch_dock";
 			switch_doc: default {
-				drive-strength = <4>;
+				drive-strength = <8>;
 				bias-pull-down;
 			};
 		};
