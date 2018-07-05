@@ -355,6 +355,10 @@
 		qcom,ext-spk-amp-gpio = <&msm_gpio 16 0>;
 		qcom,hp-spk-switch-gpio = <&msm_gpio 3 0>;
 	};
+	virtual_leds {
+		compatible = "virtual-leds";
+		status = "okay";
+	};
 /*
 	a8_power_lost_hm {
 		compatible = "a8-hm-power-lost";
@@ -381,6 +385,10 @@
 		interrupt-names = "docking", "ignition";
 		interrupt-parent = <&msm_gpio>;
 		interrupts = <&msm_gpio 49 1>, <&msm_gpio 69 1>;
+		status = "okay";
+	};
+	suspend_tm {
+		compatible = "suspend-timeout";
 		status = "okay";
 	};
 };
@@ -592,8 +600,12 @@
 	qcom,vinmin-mv = <4200>;
 	qcom,cool-bat-mv = <4100>;
 	qcom,warm-bat-mv = <4100>;
+	qcom,ibatsafe-ma = <1050>;
 	qcom,disable-vbatdet-based-recharge;
 	qcom,charger-detect-eoc;	
+	qcom,vbat-to-vph-gpio = <&msm_gpio 62 0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&vbat_to_vph_default>;
 };
 
 / {
