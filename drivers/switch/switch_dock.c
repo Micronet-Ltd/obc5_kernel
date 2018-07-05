@@ -22,6 +22,7 @@
 #include <linux/wakelock.h>
 
 #include <linux/notifier.h>
+#include <linux/power_supply.h>
 
 #if defined  (CONFIG_PRODUCT_A3001)
 static int32_t gpio_in_register_notifier(struct notifier_block *nb)
@@ -35,9 +36,23 @@ extern int32_t gpio_in_register_notifier(struct notifier_block *nb);
 #define SWITCH_DOCK	(1 << 0)
 #define SWITCH_IGN  (1 << 1)
 
+#define DEBOUNCE_INTERIM  200 //500
+#define PATERN_INTERIM    100
+#define BASIC_PATTERN     0
+#define SMART_PATTERN     1000
+#define IG_HI_PATTERN     500
+#define IG_LOW_PATTERN    100
+
 #define VIRT_GPIO_OFF	0
 #define VIRT_GPIO_INIT	1
 #define VIRT_GPIO_ON	2
+
+#define FORBID_EXT_SPKR	9
+enum e_dock_type {
+    e_dock_type_unspecified = -1,
+    e_dock_type_basic,
+    e_dock_type_smart
+};
 
 struct dock_switch_device {
 	struct  switch_dev sdev;
@@ -51,95 +66,295 @@ struct dock_switch_device {
 	int	    ign_active_l;
     unsigned sched_irq;
 	int	    state;
-    struct wake_lock wlock;
-	struct  device*			 pdev;
+    struct  wake_lock wlock;
+	struct  device*	pdev;
     struct 	notifier_block   ignition_notifier;
     int		virt_gpio_offset;
-    int		virt_init;
+    int     virt_init;
+    enum e_dock_type dock_type;
+    struct power_supply *usb_psy;
+    int 	ampl_enable;
 };
+/////////////
+static DEFINE_MUTEX(ampl_lock);
+static void set_aml_enable(struct dock_switch_device *ds, int val)
+{
+	if (!gpio_is_valid(ds->dock_pin)) {
+		return;
+	}
+
+	mutex_lock(&ampl_lock);
+
+	ds->ampl_enable = val;
+	pr_info("set %d\n", val);
+
+	if(FORBID_EXT_SPKR == val) {
+		gpio_direction_input(ds->dock_pin);
+	}
+	else {//if(0 == val) {
+        gpio_direction_output(ds->dock_pin, !val);
+	}
+
+	mutex_unlock(&ampl_lock);
+
+}
+static ssize_t ampl_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct switch_dev *sdev = (struct switch_dev *)dev_get_drvdata(dev);
+	struct dock_switch_device *ds = container_of(sdev, struct dock_switch_device, sdev);
+
+	unsigned long val;
+
+	if (!ds || !gpio_is_valid(ds->dock_pin)) {
+		return -EINVAL;
+	}
+
+	mutex_lock(&ampl_lock);
+
+	if (FORBID_EXT_SPKR != ds->ampl_enable && kstrtol(buf, 10, &val) == 0 && (val == 0 || val == 1)) {
+		pr_info("val %lu (%d)\n", val, ds->ampl_enable);
+		if(val != ds->ampl_enable) {
+			ds->ampl_enable = val;
+			gpio_set_value(ds->dock_pin, !val);
+		}
+	}else {
+		mutex_unlock(&ampl_lock);
+		return -EINVAL;
+	}
+	mutex_unlock(&ampl_lock);
+
+	return count;
+}
+static ssize_t ampl_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct switch_dev *sdev = (struct switch_dev *)dev_get_drvdata(dev);
+	struct dock_switch_device *ds = container_of(sdev, struct dock_switch_device, sdev);
+
+	if (!ds || !gpio_is_valid(ds->dock_pin)) {
+		return 0;
+	}
+	return sprintf(buf, "%d\n", ds->ampl_enable);
+}
+
+static DEVICE_ATTR(ampl_enable, S_IRUGO | S_IWUGO, ampl_show, ampl_store);
+/////////////
+static int wait_for_stable_signal(int pin, int interim)
+{
+    long long timer;
+    int pulses = 0, state = 0;
+
+//    long long start_time = 0, end_time = 0;
+
+    timer = ktime_to_ms(ktime_get()) + interim;
+
+    if (gpio_is_valid(pin)) {
+//        pr_notice("start %d pulses %lld\n", gpio_get_value(pin), ktime_to_ms(ktime_get()));
+        do {
+            if (state != gpio_get_value(pin)) {
+                state ^= 1;
+//                pr_notice("detcted %d pulses %lld\n", pulses, ktime_to_ms(ktime_get()));
+                pulses++;
+                ///temp!!!
+//                if(1==pulses)
+//                	start_time = ktime_to_ms(ktime_get());
+//               	end_time = ktime_to_ms(ktime_get());
+            }
+        } while (ktime_to_ms(ktime_get()) < timer);
+    }
+    pulses >>= 1;
+
+    pr_notice("detcted %d pulses %lld\n", pulses, ktime_to_ms(ktime_get()));
+ //   pr_notice("detcted %d pulses %lld (delta %lld)\n", pulses, ktime_to_ms(ktime_get()), (end_time - start_time));
+    return pulses;
+}
+
+static inline int pulses2freq(int pulses, int interim)
+{
+    pr_notice("%d HZ %lld\n", 1000 * pulses / interim, ktime_to_ms(ktime_get()));
+    return 1000 * pulses / interim;
+}
+
+#define HYST_PATTERN(p1, p2) ((p2) - (((p2) - (p1)) >> 1))
+//#define HYST_PATTERN(p1, p2) ((p1) + (((p2) - (p1)) >> 2))
+static inline int freq2pattern(int freq)
+{
+    if (freq < IG_LOW_PATTERN - pulses2freq(2, PATERN_INTERIM)) {//HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN)) {
+        return BASIC_PATTERN;
+    } else if (freq <= HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) && IG_LOW_PATTERN - pulses2freq(2, PATERN_INTERIM) <= freq) {
+        return IG_LOW_PATTERN;
+    } else if (freq <= HYST_PATTERN(IG_HI_PATTERN, SMART_PATTERN) && HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) < freq) {
+        return IG_HI_PATTERN;
+    }
+
+    return SMART_PATTERN; 
+}
 
 static void dock_switch_work_func(struct work_struct *work) 
 {
-	struct dock_switch_device *ds  = container_of(work, struct dock_switch_device, work);
-    int val;
+	struct dock_switch_device *ds = container_of(work, struct dock_switch_device, work);
+    long long timer = ktime_to_ms(ktime_get());
+    int val = 0, act = 0;
+    union power_supply_propval prop = {0,};
     struct irq_desc *desc;
-	
-    val = 0;
-    //pr_notice("pins[%d, %d]\n", ds->dock_pin, ds->ign_pin);
-    //pr_notice("irqs[%d, %d]\n", ds->dock_irq, ds->ign_irq);
-    //pr_notice("sched reason[%u]\n", ds->sched_irq);
-    if (gpio_is_valid(ds->dock_pin)) {
-		if (ds->dock_active_l == gpio_get_value(ds->dock_pin) ) {
-            //pr_notice("dock connected\n");
-            val |= SWITCH_DOCK;
-        } else {
-            //pr_notice("dock disconnected\n");
-        }
 
-        if (ds->sched_irq & SWITCH_DOCK) {
-            //pr_notice("enable dock monitor\n");
-            ds->sched_irq &= ~SWITCH_DOCK;
+    if (e_dock_type_basic != ds->dock_type) {
+        val = wait_for_stable_signal(ds->ign_pin, DEBOUNCE_INTERIM + PATERN_INTERIM);
+        val = pulses2freq(val, PATERN_INTERIM);
+        val = freq2pattern(val);
+        pr_notice("pattern[%d, %d] [%lld]%lld\n", val, gpio_get_value(ds->ign_pin), timer, ktime_to_ms(ktime_get()));
+       	if (BASIC_PATTERN == val) {
+            if (gpio_is_valid(ds->dock_pin)) {
+				if (e_dock_type_smart == ds->dock_type && ds->ign_active_l != gpio_get_value(ds->ign_pin)) {
+					pr_notice("smart cradle unplagged %lld [dock_pin %d]\n", ktime_to_ms(ktime_get()), gpio_get_value(ds->dock_pin));
+					if (ds->usb_psy) {
+						prop.intval = 0;
+						ds->usb_psy->set_property(ds->usb_psy, POWER_SUPPLY_PROP_CHARGE_ENABLED, &prop);
+					}
+					ds->dock_type = e_dock_type_unspecified;
+					ds->sched_irq |= SWITCH_DOCK;
+					act = 1;
+				} else if (e_dock_type_smart != ds->dock_type && ds->dock_active_l == gpio_get_value(ds->dock_pin) ){
+					pr_notice("basic cradle attempt to be plugged %lld  [dock_pin %d]\n", ktime_to_ms(ktime_get()), gpio_get_value(ds->dock_pin));
+					ds->dock_type = e_dock_type_basic;
+					act = 1;
+				}
+
+				if(act) {//e_dock_type_basic == ds->dock_type || ds->ign_active_l != gpio_get_value(ds->ign_pin)) {
+		            act = 0;
+					val = 0;
+					// pin function is basic dock detect
+					pr_notice("enable dock detect function %lld\n", ktime_to_ms(ktime_get()));
+					set_aml_enable(ds, FORBID_EXT_SPKR);//
+					//gpio_direction_input(ds->dock_pin);
+					// switch otg connector
+					if (gpio_is_valid(ds->usb_switch_pin)) {
+						pr_notice("switch usb connector %lld\n", ktime_to_ms(ktime_get()));
+						gpio_set_value(ds->usb_switch_pin, !!(ds->dock_active_l == gpio_get_value(ds->dock_pin)));
+					}
+				}
+				else {//nothing changed
+					val = ds->state;
+				}
+            }
+        } else if (e_dock_type_smart == ds->dock_type) {
+            if (IG_HI_PATTERN == val) {
+                val = (SWITCH_DOCK | SWITCH_IGN);
+                pr_notice("ignition plugged %lld\n", ktime_to_ms(ktime_get()));
+            } else if (IG_LOW_PATTERN == val) {
+                val = SWITCH_DOCK;
+                pr_notice("ignition unplugged %lld\n", ktime_to_ms(ktime_get()));
+            } else {
+                val = ds->state;
+            }
+        } else if (SMART_PATTERN == val || IG_HI_PATTERN == val || IG_LOW_PATTERN == val) {
+            pr_notice("smart cradle attempt to be plugged %lld\n", ktime_to_ms(ktime_get()));
+            ds->dock_type = e_dock_type_smart;
+            if (ds->usb_psy) {
+                prop.intval = 1;
+                ds->usb_psy->set_property(ds->usb_psy, POWER_SUPPLY_PROP_CHARGE_ENABLED, &prop);
+            }
+            if (IG_HI_PATTERN == val) {
+                val = SWITCH_DOCK | SWITCH_IGN; 
+            } else {
+                val = SWITCH_DOCK; 
+            }
+
+            // disable dock interrupts while smart cradle
+            if (ds->dock_irq) {
+            	desc = irq_to_desc(ds->dock_irq);
+            	if(0 == desc->depth) {
+                	disable_irq_nosync(ds->dock_irq);
+                    pr_notice("disable dock irq[%d] %lld\n", ds->dock_irq, ktime_to_ms(ktime_get()));
+                }
+                ds->sched_irq &= ~SWITCH_DOCK;
+            }
+
+            if (gpio_is_valid(ds->dock_pin)) {
+                // pin function is smart cradle spkr switch
+                //pr_notice("enable spkr switch function %lld\n", ktime_to_ms(ktime_get()));
+                //canceled as cause of hw design
+                //gpio_direction_output(ds->dock_pin, 1);
+				set_aml_enable(ds, 0);//
+            }
+
+            // switch otg connector
             if (gpio_is_valid(ds->usb_switch_pin)) {
-                //pr_notice("switch usb\n");
-                gpio_set_value(ds->usb_switch_pin, !!(ds->dock_active_l == gpio_get_value(ds->dock_pin)));
-            }
-        	desc = irq_to_desc(ds->dock_irq);
-        	if(desc->depth > 0) {
-                enable_irq(ds->dock_irq);
+                pr_notice("switch usb connector %lld\n", ktime_to_ms(ktime_get()));
+                gpio_set_value(ds->usb_switch_pin, ds->dock_active_l);
             }
         }
-	}
+    }
 
-    if (gpio_is_valid(ds->ign_pin)) {
-        if (ds->ign_active_l == gpio_get_value(ds->ign_pin) ) {
-            //pr_notice("ignition connected\n");
-            val |= SWITCH_IGN;
+    if (e_dock_type_basic == ds->dock_type) {
+        if (gpio_is_valid(ds->dock_pin)) {
+            if (ds->dock_active_l == gpio_get_value(ds->dock_pin) ) {
+                pr_notice("basic cradle plagged %lld\n", ktime_to_ms(ktime_get()));
+                val |= SWITCH_DOCK;
+            } else {
+                pr_notice("basic cradle unplagged %lld\n", ktime_to_ms(ktime_get()));
+                ds->dock_type = e_dock_type_unspecified;
+            }
+        }
+
+        if (gpio_is_valid(ds->ign_pin)) {
+            if (ds->ign_active_l == gpio_get_value(ds->ign_pin) ) {
+                val |= SWITCH_IGN;
+            }
+        }
+    }
+
+    // interrupts handled
+    if (ds->sched_irq & SWITCH_DOCK) {
+//        pr_notice("enable dock monitor irq[%d]\n", ds->dock_irq);
+    	desc = irq_to_desc(ds->dock_irq);
+    	if(desc->depth > 0) {
+    		ds->sched_irq &= ~SWITCH_DOCK;
+    		enable_irq(ds->dock_irq);
+    	}
+    }
+
+    if (ds->sched_irq & SWITCH_IGN) {
+//        pr_notice("enable ignition monitor irq[%d]\n", ds->ign_irq);
+    	desc = irq_to_desc(ds->ign_irq);
+    	if(desc->depth > 0) {
+        	ds->sched_irq &= ~SWITCH_IGN;
+        	enable_irq(ds->ign_irq);
+        }
+    }
+
+	if (ds->state != val) {
+        if (val & SWITCH_IGN) {
             wake_lock(&ds->wlock);
         } else {
             wake_unlock(&ds->wlock);
-            //pr_notice("ignition disconnected\n");
         }
-
-        if (ds->sched_irq & SWITCH_IGN) {
-            //pr_notice("enable ignition monitor\n");
-            ds->sched_irq &= ~SWITCH_IGN;
-        	desc = irq_to_desc(ds->ign_irq);
-        	if(desc->depth > 0) {
-                enable_irq(ds->ign_irq);
-            }
-        }
-	}
-
-	if (ds->state != val) {
 		ds->state = val;
+//        pr_notice("notify dock state [%d] %lld\n", ds->state, ktime_to_ms(ktime_get()));
 		switch_set_state(&ds->sdev, val);
 	}
 }
+
 static void dock_switch_work_virt_func(struct work_struct *work)
 {
 	struct dock_switch_device *ds  = container_of(work, struct dock_switch_device, work);
     int val = 0, err;
 
-    if(VIRT_GPIO_OFF == ds->virt_init)
+    if (VIRT_GPIO_OFF == ds->virt_init)
     	return;
 
-	if(VIRT_GPIO_INIT == ds->virt_init)
-	{
+	if (VIRT_GPIO_INIT == ds->virt_init) {
 		if(gpio_is_valid(ds->ign_pin)) {
 			err = devm_gpio_request(ds->pdev, ds->ign_pin, "ignition-state");//pdev->name);
 			if (err < 0) {
 				pr_err("failure to request the gpio[%d]\n", ds->ign_pin);
 				return;
-			}
-			else {
+			} else {
 				ds->virt_init = VIRT_GPIO_ON;
 				gpio_direction_input(ds->ign_pin);
 				gpio_export(ds->ign_pin, 0);
 		        pr_notice("virt gpio is initialized\n");
 			}
-		}
-		else
-		{
+		} else {
 			pr_err("ign gpio [%d] is not valid\n", ds->ign_pin);
 			return;
 		}
@@ -155,11 +370,12 @@ static void dock_switch_work_virt_func(struct work_struct *work)
 		switch_set_state(&ds->sdev, val);
 	}
 }
+
 static irqreturn_t dock_switch_irq_handler(int irq, void *arg)
 {
 	struct dock_switch_device *ds = (struct dock_switch_device *)arg;
 
-    //pr_notice("pins[%d]\n", irq);
+//    pr_notice("pins[%d]\n", irq);
     disable_irq_nosync(irq);
 
     if (irq == ds->dock_irq) {
@@ -187,15 +403,12 @@ static int32_t __ref dock_switch_ign_callback(struct notifier_block *nfb, unsign
     struct dock_switch_device *ds = container_of(nfb, struct dock_switch_device, ignition_notifier);
     unsigned long val = 0;
 
-    if(0 == reason)
-    {
+    if (0 == reason) {
         pr_notice("%ld\n", reason);
 		ds->virt_init = VIRT_GPIO_INIT;
    		schedule_work(&ds->work);
-    }
-    else if(1 == reason)
-    {
-        if(arg) {
+    } else if (1 == reason) {
+        if (arg) {
         	val = *((unsigned long*)arg);
             pr_notice("%ld - %ld\n", reason, val);
         	if (val & (1 << ds->virt_gpio_offset)) {
@@ -203,6 +416,7 @@ static int32_t __ref dock_switch_ign_callback(struct notifier_block *nfb, unsign
         	}
         }
     }
+
     return NOTIFY_OK;
 }
 
@@ -228,16 +442,14 @@ static int dock_switch_probe(struct platform_device *pdev)
 
 ///
     proj = of_get_property(np, "compatible", NULL);
-    if(proj && 0 == strncmp("treqr5,dock-switch", proj, 18))
-    {
+    if (proj && 0 == strncmp("treqr5,dock-switch", proj, 18)) {
         proj_num = 2;
     }
     pr_notice("project A300%d\n", proj_num);
 ///
 
     do {
-		if(1 == proj_num)
-		{
+		if (1 == proj_num) {
 			err = of_get_named_gpio_flags(np, "treq5,dock-pin", 0, (enum of_gpio_flags *)&ds->dock_active_l);
 			if (!gpio_is_valid(err)) {
 				pr_err("ivalid docking pin\n");
@@ -245,8 +457,10 @@ static int dock_switch_probe(struct platform_device *pdev)
 				break;
 			}
 
-			INIT_WORK(&ds->work, dock_switch_work_func);
-        wake_lock_init(&ds->wlock, WAKE_LOCK_SUSPEND, "switch_dock_wait_lock");
+            ds->usb_psy = power_supply_get_by_name("usb");
+
+            INIT_WORK(&ds->work, dock_switch_work_func);
+            wake_lock_init(&ds->wlock, WAKE_LOCK_SUSPEND, "switch_dock_wait_lock");
 
 			ds->dock_pin = err;
 			ds->dock_active_l = !ds->dock_active_l;
@@ -261,6 +475,8 @@ static int dock_switch_probe(struct platform_device *pdev)
 			ds->ign_active_l = !ds->ign_active_l;
 			pr_notice("ignition active level %s\n", (ds->ign_active_l)?"high":"low");
 
+            ds->dock_type = e_dock_type_unspecified;
+
 			if (gpio_is_valid(ds->dock_pin)) {
 				err = devm_gpio_request(dev, ds->dock_pin, "dock-state");
 				if (err < 0) {
@@ -272,7 +488,8 @@ static int dock_switch_probe(struct platform_device *pdev)
 					pr_err("failure to set direction of the gpio[%d]\n", ds->dock_pin);
 					break;
 				}
-				gpio_export(ds->dock_pin, 0);
+				gpio_export(ds->dock_pin, 1);
+				set_aml_enable(ds, FORBID_EXT_SPKR);
 				ds->dock_irq = gpio_to_irq(ds->dock_pin);
 				if (ds->dock_irq < 0) {
 					pr_err("failure to request gpio[%d] irq\n", ds->dock_pin);
@@ -328,24 +545,19 @@ static int dock_switch_probe(struct platform_device *pdev)
 			if (!(ds->dock_irq < 0 && ds->ign_irq < 0)) {
 				device_init_wakeup(dev, 1);
 			}
-		}//
-		else//proj TREQr_5
-		{
+		} else {
+            //proj TREQr_5
 			err = of_property_read_u32_array(np, "treqr5,virt-gpio", arr, 2);
-			if(!err)
-			{
+			if (!err) {
 				err                    = arr[0];//base
 				ds->virt_gpio_offset   = arr[1];//offset
 				err += ds->virt_gpio_offset;
-				if(!gpio_is_valid(err))
-				{
+				if (!gpio_is_valid(err)) {
 					pr_err("ivalid ignition pin\n");
 					err = -EINVAL;
 					break;
 				}
-			}
-			else
-			{
+			} else {
 				pr_err("cannot get ign gpio\n");
 				err = -EINVAL;
 				break;
@@ -359,8 +571,7 @@ static int dock_switch_probe(struct platform_device *pdev)
 				err = devm_gpio_request(dev, ds->ign_pin, "ignition-state");//pdev->name);
 				if (err < 0) {
 					pr_err("failure to request the gpio[%d]\n", ds->ign_pin);
-				}
-				else {
+				} else {
 					err = gpio_direction_input(ds->ign_pin);
 					if (err < 0) {
 						pr_err("failure to set direction of the gpio[%d]\n", ds->ign_pin);
@@ -388,6 +599,11 @@ static int dock_switch_probe(struct platform_device *pdev)
         err = switch_dev_register(&ds->sdev);
         if (err < 0) {
             pr_err("err_register_switch\n");
+            break;
+        }
+    	err = device_create_file((&ds->sdev)->dev, &dev_attr_ampl_enable);
+    	if (err < 0) {
+            pr_err("err0r create amplifier file\n");
             break;
         }
 
@@ -423,6 +639,7 @@ static int dock_switch_remove(struct platform_device *pdev)
 
     cancel_work_sync(&ds->work);
 
+	device_remove_file((&ds->sdev)->dev, &dev_attr_ampl_enable);
     switch_dev_unregister(&ds->sdev);
 
     if (device_may_wakeup(&pdev->dev))
@@ -460,7 +677,7 @@ static int dock_switch_suspend(struct device *dev)
             pr_notice("enable wake source IGN[%d]\n", ds->ign_irq);
             enable_irq_wake(ds->ign_irq);
         }
-        if (ds->dock_irq) {
+        if (ds->dock_irq && (e_dock_type_smart != ds->dock_type)) {
             pr_notice("enable wake source DOCK[%d]\n", ds->dock_irq);
             enable_irq_wake(ds->dock_irq);
         }
@@ -477,25 +694,28 @@ static int dock_switch_resume(struct device *dev)
 
     if (device_may_wakeup(dev)) {
         if (ds->ign_irq) {
-            pr_notice("disable wake source IGN[%d]\n", ds->ign_irq);
         	desc = irq_to_desc(ds->ign_irq);
             if(desc->depth == 0) {
-                disable_irq_nosync(ds->ign_irq);
+            	disable_irq_nosync(ds->ign_irq);
+                pr_notice("disable wake source IGN[%d]\n", ds->ign_irq);
             }
             disable_irq_wake(ds->ign_irq);
         }
-        if (ds->dock_irq) {
-            pr_notice("disable wake source DOCK[%d]\n", ds->dock_irq);
+        if (ds->dock_irq && (e_dock_type_smart != ds->dock_type)) {
         	desc = irq_to_desc(ds->dock_irq);
             if(desc->depth == 0) {
-                disable_irq_nosync(ds->dock_irq);
+            	disable_irq_nosync(ds->dock_irq);
+                pr_notice("disable wake source DOCK[%d]\n", ds->dock_irq);
             }
             disable_irq_wake(ds->dock_irq);
         }
     }
 
-    ds->sched_irq = SWITCH_DOCK | SWITCH_IGN;
-    pr_notice("sched reason[%u]\n", ds->sched_irq);
+    ds->sched_irq = SWITCH_IGN;
+    if (e_dock_type_smart != ds->dock_type) {
+        ds->sched_irq |= SWITCH_DOCK;
+    }
+    pr_notice("sched reason[%u]\n", ds->sched_irq); 
 	schedule_work(&ds->work);
 
 	return 0;
