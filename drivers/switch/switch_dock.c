@@ -49,6 +49,7 @@ extern int32_t gpio_in_register_notifier(struct notifier_block *nb);
 #define VIRT_GPIO_INIT	1
 #define VIRT_GPIO_ON	2
 
+#define FORBID_EXT_SPKR	9
 enum e_dock_type {
     e_dock_type_unspecified = -1,
     e_dock_type_basic,
@@ -74,12 +75,77 @@ struct dock_switch_device {
     int     virt_init;
     enum e_dock_type dock_type;
     struct power_supply *usb_psy;
+    int 	ampl_enable;
 };
+/////////////
+static DEFINE_MUTEX(ampl_lock);
+static void set_aml_enable(struct dock_switch_device *ds, int val)
+{
+	if (!gpio_is_valid(ds->dock_pin)) {
+		return;
+	}
 
+	mutex_lock(&ampl_lock);
+
+	ds->ampl_enable = val;
+	pr_info("set %d\n", val);
+
+	if(FORBID_EXT_SPKR == val) {
+		gpio_direction_input(ds->dock_pin);
+	}
+	else {//if(0 == val) {
+        gpio_direction_output(ds->dock_pin, !val);
+	}
+
+	mutex_unlock(&ampl_lock);
+
+}
+static ssize_t ampl_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct switch_dev *sdev = (struct switch_dev *)dev_get_drvdata(dev);
+	struct dock_switch_device *ds = container_of(sdev, struct dock_switch_device, sdev);
+
+	unsigned long val;
+
+	if (!ds || !gpio_is_valid(ds->dock_pin)) {
+		return -EINVAL;
+	}
+
+	mutex_lock(&ampl_lock);
+
+	if (FORBID_EXT_SPKR != ds->ampl_enable && kstrtol(buf, 10, &val) == 0 && (val == 0 || val == 1)) {
+		pr_info("val %lu (%d)\n", val, ds->ampl_enable);
+		if(val != ds->ampl_enable) {
+			ds->ampl_enable = val;
+			gpio_set_value(ds->dock_pin, !val);
+		}
+	}else {
+		mutex_unlock(&ampl_lock);
+		return -EINVAL;
+	}
+	mutex_unlock(&ampl_lock);
+
+	return count;
+}
+static ssize_t ampl_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct switch_dev *sdev = (struct switch_dev *)dev_get_drvdata(dev);
+	struct dock_switch_device *ds = container_of(sdev, struct dock_switch_device, sdev);
+
+	if (!ds || !gpio_is_valid(ds->dock_pin)) {
+		return 0;
+	}
+	return sprintf(buf, "%d\n", ds->ampl_enable);
+}
+
+static DEVICE_ATTR(ampl_enable, S_IRUGO | S_IWUGO, ampl_show, ampl_store);
+/////////////
 static int wait_for_stable_signal(int pin, int interim)
 {
     long long timer;
     int pulses = 0, state = 0;
+
+//    long long start_time = 0, end_time = 0;
 
     timer = ktime_to_ms(ktime_get()) + interim;
 
@@ -90,12 +156,17 @@ static int wait_for_stable_signal(int pin, int interim)
                 state ^= 1;
 //                pr_notice("detcted %d pulses %lld\n", pulses, ktime_to_ms(ktime_get()));
                 pulses++;
+                ///temp!!!
+//                if(1==pulses)
+//                	start_time = ktime_to_ms(ktime_get());
+//               	end_time = ktime_to_ms(ktime_get());
             }
         } while (ktime_to_ms(ktime_get()) < timer);
     }
     pulses >>= 1;
 
     pr_notice("detcted %d pulses %lld\n", pulses, ktime_to_ms(ktime_get()));
+ //   pr_notice("detcted %d pulses %lld (delta %lld)\n", pulses, ktime_to_ms(ktime_get()), (end_time - start_time));
     return pulses;
 }
 
@@ -105,13 +176,13 @@ static inline int pulses2freq(int pulses, int interim)
     return 1000 * pulses / interim;
 }
 
-//#define HYST_PATTERN(p1, p2) ((p2) - (((p2) - (p1)) >> 1))
-#define HYST_PATTERN(p1, p2) ((p1) + (((p2) - (p1)) >> 2))
+#define HYST_PATTERN(p1, p2) ((p2) - (((p2) - (p1)) >> 1))
+//#define HYST_PATTERN(p1, p2) ((p1) + (((p2) - (p1)) >> 2))
 static inline int freq2pattern(int freq)
 {
-    if (freq < HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN)) {
+    if (freq < IG_LOW_PATTERN - pulses2freq(2, PATERN_INTERIM)) {//HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN)) {
         return BASIC_PATTERN;
-    } else if (freq <= HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) && HYST_PATTERN(BASIC_PATTERN, IG_LOW_PATTERN) <= freq) {
+    } else if (freq <= HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) && IG_LOW_PATTERN - pulses2freq(2, PATERN_INTERIM) <= freq) {
         return IG_LOW_PATTERN;
     } else if (freq <= HYST_PATTERN(IG_HI_PATTERN, SMART_PATTERN) && HYST_PATTERN(IG_LOW_PATTERN, IG_HI_PATTERN) < freq) {
         return IG_HI_PATTERN;
@@ -155,7 +226,8 @@ static void dock_switch_work_func(struct work_struct *work)
 					val = 0;
 					// pin function is basic dock detect
 					pr_notice("enable dock detect function %lld\n", ktime_to_ms(ktime_get()));
-					gpio_direction_input(ds->dock_pin);
+					set_aml_enable(ds, FORBID_EXT_SPKR);//
+					//gpio_direction_input(ds->dock_pin);
 					// switch otg connector
 					if (gpio_is_valid(ds->usb_switch_pin)) {
 						pr_notice("switch usb connector %lld\n", ktime_to_ms(ktime_get()));
@@ -203,7 +275,8 @@ static void dock_switch_work_func(struct work_struct *work)
                 // pin function is smart cradle spkr switch
                 //pr_notice("enable spkr switch function %lld\n", ktime_to_ms(ktime_get()));
                 //canceled as cause of hw design
-                gpio_direction_output(ds->dock_pin, 0);
+                //gpio_direction_output(ds->dock_pin, 1);
+				set_aml_enable(ds, 0);//
             }
 
             // switch otg connector
@@ -420,6 +493,7 @@ static int dock_switch_probe(struct platform_device *pdev)
 					break;
 				}
 				gpio_export(ds->dock_pin, 1);
+				set_aml_enable(ds, FORBID_EXT_SPKR);
 				ds->dock_irq = gpio_to_irq(ds->dock_pin);
 				if (ds->dock_irq < 0) {
 					pr_err("failure to request gpio[%d] irq\n", ds->dock_pin);
@@ -531,6 +605,11 @@ static int dock_switch_probe(struct platform_device *pdev)
             pr_err("err_register_switch\n");
             break;
         }
+    	err = device_create_file((&ds->sdev)->dev, &dev_attr_ampl_enable);
+    	if (err < 0) {
+            pr_err("err0r create amplifier file\n");
+            break;
+        }
 
         ds->pdev = dev;
         dev_set_drvdata(dev, ds);
@@ -564,6 +643,7 @@ static int dock_switch_remove(struct platform_device *pdev)
 
     cancel_work_sync(&ds->work);
 
+	device_remove_file((&ds->sdev)->dev, &dev_attr_ampl_enable);
     switch_dev_unregister(&ds->sdev);
 
     if (device_may_wakeup(&pdev->dev))
