@@ -35,6 +35,8 @@ extern int32_t gpio_in_register_notifier(struct notifier_block *nb);
 
 #define SWITCH_DOCK	(1 << 0)
 #define SWITCH_IGN  (1 << 1)
+#define SWITCH_EDOCK (1 << 2)
+#define SWITCH_ODOCK (1 << 3)
 
 #define DEBOUNCE_INTERIM  200 //500
 #define PATERN_INTERIM    100
@@ -238,10 +240,10 @@ static void dock_switch_work_func(struct work_struct *work)
             }
         } else if (e_dock_type_smart == ds->dock_type) {
             if (IG_HI_PATTERN == val) {
-                val = (SWITCH_DOCK | SWITCH_IGN);
+                val = (SWITCH_DOCK | SWITCH_IGN | SWITCH_EDOCK);
                 pr_notice("ignition plugged %lld\n", ktime_to_ms(ktime_get()));
             } else if (IG_LOW_PATTERN == val) {
-                val = SWITCH_DOCK;
+                val = SWITCH_DOCK | SWITCH_EDOCK;
                 pr_notice("ignition unplugged %lld\n", ktime_to_ms(ktime_get()));
             } else {
                 val = ds->state;
@@ -254,9 +256,9 @@ static void dock_switch_work_func(struct work_struct *work)
                 ds->usb_psy->set_property(ds->usb_psy, POWER_SUPPLY_PROP_CHARGE_ENABLED, &prop);
             }
             if (IG_HI_PATTERN == val) {
-                val = SWITCH_DOCK | SWITCH_IGN; 
+                val = SWITCH_DOCK | SWITCH_IGN | SWITCH_EDOCK; 
             } else {
-                val = SWITCH_DOCK; 
+                val = SWITCH_DOCK | SWITCH_EDOCK; 
             }
 
             // disable dock interrupts while smart cradle
@@ -338,6 +340,7 @@ static void dock_switch_work_virt_func(struct work_struct *work)
 {
 	struct dock_switch_device *ds  = container_of(work, struct dock_switch_device, work);
     int val = 0, err;
+    
 
     if (VIRT_GPIO_OFF == ds->virt_init)
     	return;
@@ -360,6 +363,7 @@ static void dock_switch_work_virt_func(struct work_struct *work)
 		}
 	}
 
+	val |= SWITCH_ODOCK;
     if (ds->ign_active_l == gpio_get_value(ds->ign_pin) ) {
         val |= SWITCH_IGN;
     }
